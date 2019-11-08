@@ -20,7 +20,8 @@ import time
 import pickle
 import bz2
 import time
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon, LineString, LinearRing
+from shapely.geometry.polygon import orient
 from ev_model import persistency, environment, elements
 from ev_model.utilities import geometry as evmetry
 from pathlib import Path
@@ -29,9 +30,12 @@ import getopt
 import sys
 
 #%%
-def load_system_state(directory, file_name):
-    itno, _, secretory, ciliary, evs, *grids = persistency.read_xml(directory, file_name)
-    parameters = ['id', 'x', 'y', 'radius_um', 'age']
+def load_evs_from_xml(directory, file_name, parameters = ['id', 'x', 'y', 'radius_um', 'age']):
+    """
+    Produces a list of dictionaries and a dataframe with the EVs in a state file specified
+    """
+    _, _, _, _, evs, *_ = persistency.read_xml(directory, file_name)
+    
     evs_df = persistency.agent_data_to_data_frame(evs, parameters)
     return evs, evs_df
 
@@ -111,18 +115,18 @@ def holes_in_shape_at_d_1(linestring):
     Computes the holes in this shape at a distance of 1 from the edges.
     """
     holes = []
-    print(f"{'+' if linestring.is_ring else '-'}ring, {'+' if linestring.is_simple else '-'}simple, {'+' if linestring.is_valid else '-'}valid")
+    print(f"      {'+' if linestring.is_ring else '-'}ring, {'+' if linestring.is_simple else '-'}simple, {'+' if linestring.is_valid else '-'}valid")
     hole = linestring.parallel_offset(1,'right', resolution=0, mitre_limit=1.0)
     if type(hole) == LineString:
         if len(hole.coords) > 3:
-            print(f"{len(hole.coords)} coords, {'+' if hole.is_ring else '-'}ring, {'+' if hole.is_simple else '-'}simple, {'+' if hole.is_valid else '-'}valid")
+            print(f"        {len(hole.coords)} coords, {'+' if hole.is_ring else '-'}ring, {'+' if hole.is_simple else '-'}simple, {'+' if hole.is_valid else '-'}valid")
             holes.append(hole)
     else: # multi holes
         #print('MultiLineString?',type(hole))
         if len(hole) > 0:
             for innerhole in hole:
                 if len(innerhole.coords) > 3:
-                    print(f"{len(innerhole.coords)} coords, {'+' if innerhole.is_ring else '-'}ring, {'+' if innerhole.is_simple else '-'}simple, {'+' if innerhole.is_valid else '-'}valid")
+                    print(f"          {len(innerhole.coords)} coords, {'+' if innerhole.is_ring else '-'}ring, {'+' if innerhole.is_simple else '-'}simple, {'+' if innerhole.is_valid else '-'}valid")
                     holes.append(innerhole)
     return holes
 
@@ -131,17 +135,17 @@ def produce_interiors_from_exteriors(exteriors):
     
     inner_holes = 0
     for idx in range(len(exteriors)):
-        interiors[idx] = produce_list_of_line_strings(holes_in_shape_at_d_1(
+        interiors[idx] = produce_list_of_LinearRings(holes_in_shape_at_d_1(
             exteriors[idx]))
-        print(f'LineString {idx + 1:3d}/{len(exteriors)} -> {len(interiors[idx])} shapes')
+        print(f'      {idx + 1:3d}/{len(exteriors)} -> {len(interiors[idx])} shapes')
         inner_holes += len(interiors[idx])
     
     print('Computed', inner_holes,'interior shapes for this distance')
     return interiors
 
-def persist_shapes_to_disk(d, interiors, exteriors, interior_fname, exterior_fname):
-    interior_pickle = f'resources/analysis/{interior_fname}{d}.pickle.bz2'
-    exterior_pickle = f'resources/analysis/{exterior_fname}{d}.pickle.bz2'
+def persist_shapes_to_disk(d, section_name, exteriors, interiors):
+    interior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
+    exterior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_interiors.pickle.bz2'
     with bz2.BZ2File(interior_pickle, 'w') as target:
         pickle.dump(interiors, target)
         print('Data saved as:', interior_pickle)
@@ -149,7 +153,39 @@ def persist_shapes_to_disk(d, interiors, exteriors, interior_fname, exterior_fna
         pickle.dump(exteriors, target)
         print('Data saved as:', exterior_pickle)
 
-def produce_list_of_line_strings(elements):
+def load_persisted_data(d, section_name):
+    interior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_interiors.pickle.bz2'
+    exterior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
+    print(f'    loading data for d={d} from {interior_pickle} and {exterior_pickle}')
+    
+    with bz2.BZ2File(exterior_pickle, 'r') as source:
+        exteriors = pickle.load(source)
+    with bz2.BZ2File(interior_pickle, 'r') as source:
+        interiors = pickle.load(source)
+    # verify the data loaded is a list of LinearRings
+    for interior in interiors:
+        if type(interior) == type(list()):
+            for ls in interior:
+                if type(ls) != LinearRing:
+                    raise ValueError('Interior not a LinearRing but a', type(ls))
+        else:
+            if type(interior) is not LinearRing:
+                raise ValueError('interior not a list but a', type(interior))
+    return exteriors, interiors
+
+def get_LinearRing_gt3(element, t):
+    if t is LineString:
+        lr = LinearRing(element)
+    elif t is LinearRing:
+        lr = element
+    
+    if len(lr.coords) > 3:
+        if lr.is_ccw:
+            return lr
+        else:
+            return orient(Polygon(lr)).exterior
+
+def produce_list_of_LinearRings(elements):
     new_line_strings = []
     # flatten the nested lists if needed
     for element in elements:
@@ -157,13 +193,16 @@ def produce_list_of_line_strings(elements):
         if t is type(list()):
             for ls in element:
                 tls = type(ls)
-                if tls is LineString:
-                    if len(ls.coords) > 3:
-                        new_line_strings.append(ls)
+                if tls is LineString or tls is LinearRing:
+                    lr = get_LinearRing_gt3(ls, tls)
+                    if lr:
+                        new_line_strings.append(lr)
                 else: 
-                    print('Interior not a LineString but a', tls)
-        elif t is LineString:
-            new_line_strings.append(element)
+                    print('Interior in List not a LineString or LinearRing but a', tls)
+        elif t is LinearRing or t is LineString:
+            lr = get_LinearRing_gt3(element, t)
+            if lr:
+                new_line_strings.append(lr)
         else:
             print('interior is not a list or LineString but a', t)
     return new_line_strings
@@ -203,54 +242,37 @@ def compute_all_holes_in_polygons(section, target_distance):
     be independent from those produced for other distances.
     }
     """
-    interior_fname = f'data_v2_{section}_interior_d_'
-    exterior_fname = f'data_v2_{section}_exterior_d_'
-    
-    last_d = identify_last_distance_available(interior_fname, target_distance)
+    last_d = identify_last_distance_available(section)
     
     shapes_at_d = {} # key: polygon ID, values: dictionary of {distance: holes}
 
     if last_d > 0:
         # load previous results and store in the general collection
         for d in range(1, last_d + 1):
-            shapes_at_d[d] = {'exterior':list(), 'interior':list()}
-            
-            interior_pickle = 'resources/analysis/' + interior_fname + str(d) + '.pickle.bz2'
-            exterior_pickle = 'resources/analysis/' + exterior_fname + str(d) + '.pickle.bz2'
-            print('loading data for d=',d,'from', interior_pickle, 'and', exterior_pickle)
-            with bz2.BZ2File(exterior_pickle, 'r') as source:
-                shapes_at_d[d]['exterior'] = pickle.load(source)
-            with bz2.BZ2File(interior_pickle, 'r') as source:
-                shapes_at_d[d]['interior'] = pickle.load(source)
-            # verify the data loaded is a list of LineString
-            for interior in shapes_at_d[d]['interior']:
-                if type(interior) == type(list()):
-                    for ls in interior:
-                        if type(ls) != LineString:
-                            raise ValueError('Interior not a LineString but a', type(ls))
-                else:
-                    raise ValueError('interior not a list but a', type(interior))
+            shapes_at_d[d] = {}
+            exteriors, interiors = load_persisted_data(d, section)
             print('  Loaded shapes for distance: ', d)
     
     # NOW we CAN compute the holes for the distances between last_d and target_distance
-    for d in range(last_d + 1, target_distance + 1):
-        if last_d == 0:
+    r = [c for c in range(last_d + 1, target_distance + 1)]
+    for d in r:
+        if d == 1:
             exteriors = [polygon.exterior for polygon in environment.load_polygons(section)]
-            print('This section contains', len(exteriors), 'exterior LineStrings.\nStart processing from d=0...')
+            print('    Start processing from d=0...\n      The initial polygon(s) contain(s)', len(exteriors), 'exterior LineStrings.')
         else:
             # obtain the new exteriors from the interiors from the previous distance
-            exteriors = produce_list_of_line_strings(shapes_at_d[d - 1]['interior'])
-            print('Processing distance', d, 'converting', len(exteriors),'LineStrings (d-1 interior shapes) into exterior shapes for this distance')
+            exteriors = produce_list_of_LinearRings(shapes_at_d[d - 1]['interior'])
+            print('    Processing distance', d, 'converting', len(exteriors),'(d-1 interior shapes) into exterior shapes for this distance')
         start = time.time()
         interiors = produce_interiors_from_exteriors(exteriors)
 
-        persist_shapes_to_disk(d, interiors, exteriors, interior_fname, exterior_fname)
+        persist_shapes_to_disk(d, section, exteriors, interiors)
         elapsed = time.time() - start
         if elapsed < 60:
-            print(f'Elapsed {elapsed} seconds')
+            print(f'    Elapsed {elapsed} seconds')
         else:
             m = elapsed // 60
-            print(f'Elapsed {m} minutes and {elapsed - (m * 60)}seconds')
+            print(f"    Elapsed {m} {'minutes' if m > 1 else 'minute'} and {elapsed - (m * 60): .2f} seconds")
 
         # add to the general collection
         shapes_at_d[d] = {}
@@ -260,11 +282,11 @@ def compute_all_holes_in_polygons(section, target_distance):
     return shapes_at_d
 
 #%%
-def identify_last_distance_available(fname, target_distance, dir_name='resources/analysis/'):
+def identify_last_distance_available(section_name, dir_name='resources/analysis/'):
     target_dir = Path(dir_name)
     if target_dir.exists() and target_dir.is_dir():
-        print('target exists and is a directory')
-        pattern = '^'+fname+'([0-9]*).pickle.bz2$'
+        print('Target path exists and is a directory, checking it\'s content')
+        pattern = f'^data_v2_{section_name}_([0-9]*)_interiors.pickle.bz2$'
         max_d = 0
         for f in target_dir.iterdir():
             res = re.search(pattern, f.name)
@@ -272,12 +294,11 @@ def identify_last_distance_available(fname, target_distance, dir_name='resources
                 d = int(res.group(1))
                 if max_d < d:
                     max_d = d
-                    fname = f.name
         if max_d > 0:
-            print('This section has been processed before, largest value is', max_d)
+            print('  This section has been processed before, largest value is', max_d)
             return max_d
         else:
-            print('No previous results available')
+            print('  No previous results available')
             return 0
     else:
         raise ValueError('target DOES NOT exist or IS NOT a directory')
