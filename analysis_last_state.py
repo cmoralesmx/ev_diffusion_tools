@@ -248,9 +248,9 @@ def compute_all_holes_in_polygons(section, target_distance):
 
     if last_d > 0:
         # load previous results and store in the general collection
-        for d in range(1, last_d + 1):
-            shapes_at_d[d]['exteriors'], shapes_at_d[d]['interiors'] = load_persisted_data(d, section)
-            print('  Loaded shapes for distance: ', d)
+        shapes_at_d[last_d] = dict()
+        shapes_at_d[last_d]['exterior'], shapes_at_d[last_d]['interior'] = load_persisted_data(last_d, section)
+        print('  Loaded shapes for distance: ', last_d)
     
     # NOW we CAN compute the holes for the distances between last_d and target_distance
     r = [c for c in range(last_d + 1, target_distance + 1)]
