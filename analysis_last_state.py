@@ -39,7 +39,6 @@ def load_evs_from_xml(directory, file_name, parameters = ['id', 'x', 'y', 'radiu
     evs_df = persistency.agent_data_to_data_frame(evs, parameters)
     return evs, evs_df
 
-
 # shapely
 def produce_polygon_with_holes(polygon, holes):
     if len(polygon.exterior.coords) > 3:
@@ -223,7 +222,7 @@ def compute_all_holes_in_polygons(section, target_distance):
     their size will be progresively reduced through the process.
         
     structures in use
-    shapes_at_d = {
+    shapes_at_d = {'utj':{
     1 : {'exterior':[0,1,2,3],
           'interior':[[0], <- produced from exterior 0
                       [0], <- produced from exterior 1
@@ -232,6 +231,7 @@ def compute_all_holes_in_polygons(section, target_distance):
     2: {'exterior':[0, 1, 2, 3, 4], <- the interior shapes from the last distance
                                         become the exterior's of the next distance
         'interior':[[0], [], [0, 1], [0]]} <- thus, these would be produced from 
+    }, 'ampulla: {1:{'exterior'=[], 'interior':[]}} ..
                                   the new exteriors, not from the previous exteriors
     For exteriors with no interior shapes, an empty list should be stored
     The link between interiors-exteriors is given by the indexes from the containing
@@ -244,13 +244,12 @@ def compute_all_holes_in_polygons(section, target_distance):
     """
     last_d = identify_last_distance_available(section)
     
-    shapes_at_d = {} # key: polygon ID, values: dictionary of {distance: holes}
+    shapes_at_d = {} # key: 'section_name', values: dictionaries of {distance: holes}
 
     if last_d > 0:
         # load previous results and store in the general collection
         for d in range(1, last_d + 1):
-            shapes_at_d[d] = {}
-            exteriors, interiors = load_persisted_data(d, section)
+            shapes_at_d[d]['exteriors'], shapes_at_d[d]['interiors'] = load_persisted_data(d, section)
             print('  Loaded shapes for distance: ', d)
     
     # NOW we CAN compute the holes for the distances between last_d and target_distance
@@ -302,7 +301,32 @@ def identify_last_distance_available(section_name, dir_name='resources/analysis/
             return 0
     else:
         raise ValueError('target DOES NOT exist or IS NOT a directory')
+
+def produce_prepared_polygons(section, d):
+    from shapely.prepared import prep
+
+    last_d = identify_last_distance_available(section)
+
+    if last_d == 0:
+        print('ERROR, exterior and interior shapes are not available')
+    elif d > last_d:
+        print('ERROR, exterior and interior shapes are not available at the desired distance')
+    else:
+        # load previous results and store in the general collection
+        exteriors, interiors = load_persisted_data(d, section)
+        print('  Loaded shapes for distance: ', d)
         
+        polygons = []
+        prepared_polygons = []
+
+        for eid in range(len(exteriors)):
+            poly = Polygon(exteriors[eid], [interior for interior in interiors])
+
+            polygons.append(poly)
+            prepared_polygons.append(prep(poly))
+        
+        return polygons, prepared_polygons
+
 #%%
 #section = 'ia-junction'
 #shapes_at_d = compute_all_holes_in_polygons(section, 3)
@@ -330,5 +354,16 @@ if __name__ == '__main__':
             compute_all_holes_in_polygons(section, int(d))
         else:
             print('ERROR No distance specified')
+            print(help, file=sys.stderr)
+            sys.exit
+    
+    if '-p' in opts:
+        if len(args) == 1:
+            d = args[0]
+            section = opts['-o']
+            print('Producing prepared polygons for topological querys for section', section, 'distance', d)
+            produce_prepared_polygons(section, distance)
+        else:
+            print('ERROR, no diatance specified')
             print(help, file=sys.stderr)
             sys.exit
