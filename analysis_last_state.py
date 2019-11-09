@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """\
 USE: python <PROGNAME> (options) 
+Computes 1um cannals from the boundaries of the cross section towards the 
+centroid of the cross sections from the five oviduct sections available.
+
+Valid segments: [isthmus, utj, ia-junction, infundibulum, ampulla]
+    complexity:  lowest                                    highest
 OPTIONS:
     -h : print this help message and exit
-    -s SEGMENT : Oviduct section to compute [utj, isthmus, ampulla, ia-junction, infundibulum]
-    d : max distance to compute [1-10]
+    -s SEGMENT : Compute internal shapes at distance from the external shape in the segment
+    -p SEGMENT : Produce prepared polygons for topological queries.
+    d : distance to compute [1-10]
 """
 
 import numpy as np
@@ -115,7 +121,7 @@ def holes_in_shape_at_d_1(linestring):
     """
     holes = []
     print(f"      {'+' if linestring.is_ring else '-'}ring, {'+' if linestring.is_simple else '-'}simple, {'+' if linestring.is_valid else '-'}valid")
-    hole = linestring.parallel_offset(1,'right', resolution=0, mitre_limit=1.0)
+    hole = linestring.parallel_offset(1,'left', resolution=0, mitre_limit=1.0)
     if type(hole) == LineString:
         if len(hole.coords) > 3:
             print(f"        {len(hole.coords)} coords, {'+' if hole.is_ring else '-'}ring, {'+' if hole.is_simple else '-'}simple, {'+' if hole.is_valid else '-'}valid")
@@ -143,16 +149,17 @@ def produce_interiors_from_exteriors(exteriors):
     return interiors
 
 def persist_shapes_to_disk(d, section_name, exteriors, interiors):
-    interior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
-    exterior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_interiors.pickle.bz2'
-    with bz2.BZ2File(interior_pickle, 'w') as target:
-        pickle.dump(interiors, target)
+    interior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_interiors.pickle.bz2'
+    exterior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
+    #print('exteriors:', len(exteriors), 'interiors', len(interiors))
+    with bz2.BZ2File(interior_pickle, 'w') as target1:
+        pickle.dump(interiors, target1)
         print('Data saved as:', interior_pickle)
-    with bz2.BZ2File(exterior_pickle, 'w') as target:
-        pickle.dump(exteriors, target)
+    with bz2.BZ2File(exterior_pickle, 'w') as target2:
+        pickle.dump(exteriors, target2)
         print('Data saved as:', exterior_pickle)
 
-def load_persisted_data(d, section_name):
+def load_persisted_data(section_name, d):
     interior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_interiors.pickle.bz2'
     exterior_pickle = f'resources/analysis/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
     print(f'    loading data for d={d} from {interior_pickle} and {exterior_pickle}')
@@ -162,15 +169,24 @@ def load_persisted_data(d, section_name):
     with bz2.BZ2File(interior_pickle, 'r') as source:
         interiors = pickle.load(source)
     # verify the data loaded is a list of LinearRings
-    for interior in interiors:
-        if type(interior) == type(list()):
-            for ls in interior:
-                if type(ls) != LinearRing:
-                    raise ValueError('Interior not a LinearRing but a', type(ls))
-        else:
-            if type(interior) is not LinearRing:
-                raise ValueError('interior not a list but a', type(interior))
+    print('Checking elements loaded as exteriors')
+    check_list_of_LinearRings(exteriors)
+    print('Checking elements loaded as interiors')
+    check_list_of_LinearRings(interiors)
     return exteriors, interiors
+
+def check_list_of_LinearRings(elements):
+    for element in elements:
+        if type(element) == type(list()):
+            print('It is a list with', len(element), 'elements')
+            for elem in element:
+                print(type(elem))
+                if type(elem) != LinearRing:
+                    raise ValueError('Is not a LinearRing but a', type(elem))
+        else:
+            print(type(element))
+            if type(element) is not LinearRing:
+                raise ValueError('Is not a list but a', type(element))
 
 def get_LinearRing_gt3(element, t):
     if t is LineString:
@@ -247,10 +263,11 @@ def compute_all_holes_in_polygons(section, target_distance):
     shapes_at_d = {} # key: 'section_name', values: dictionaries of {distance: holes}
 
     if last_d > 0:
-        # load previous results and store in the general collection
-        shapes_at_d[last_d] = dict()
-        shapes_at_d[last_d]['exterior'], shapes_at_d[last_d]['interior'] = load_persisted_data(last_d, section)
-        print('  Loaded shapes for distance: ', last_d)
+        # load last results available or target_distance and store in the general collection
+        d = target_distance if target_distance < last_d else last_d
+        shapes_at_d[d] = dict()
+        shapes_at_d[d]['exterior'], shapes_at_d[d]['interior'] = load_persisted_data(section, d)
+        print('  Loaded shapes for distance: ', d)
     
     # NOW we CAN compute the holes for the distances between last_d and target_distance
     r = [c for c in range(last_d + 1, target_distance + 1)]
@@ -268,7 +285,7 @@ def compute_all_holes_in_polygons(section, target_distance):
         persist_shapes_to_disk(d, section, exteriors, interiors)
         elapsed = time.time() - start
         if elapsed < 60:
-            print(f'    Elapsed {elapsed} seconds')
+            print(f'    Elapsed {elapsed:.2f} seconds')
         else:
             m = elapsed // 60
             print(f"    Elapsed {m} {'minutes' if m > 1 else 'minute'} and {elapsed - (m * 60): .2f} seconds")
@@ -313,7 +330,7 @@ def produce_prepared_polygons(section, d):
         print('ERROR, exterior and interior shapes are not available at the desired distance')
     else:
         # load previous results and store in the general collection
-        exteriors, interiors = load_persisted_data(d, section)
+        exteriors, interiors = load_persisted_data(section, d)
         print('  Loaded shapes for distance: ', d)
         
         polygons = []
