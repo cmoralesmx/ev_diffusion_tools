@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """\
-USE: python <PROGNAME> (options) 
-Computes 1um cannals from the boundaries of the cross section towards the 
+USE: python <PROGNAME> (options)
+Computes 1um cannals from the boundaries of the cross section towards the
 centroid of the cross sections from the five oviduct sections available.
 
 Valid segments: [isthmus, utj, ia-junction, infundibulum, ampulla]
@@ -41,9 +41,19 @@ def load_evs_from_xml(directory, file_name, parameters = ['id', 'x', 'y', 'radiu
     Produces a list of dictionaries and a dataframe with the EVs in a state file specified
     """
     _, _, _, _, evs, *_ = persistency.read_xml(directory, file_name)
-    
+
     evs_df = persistency.agent_data_to_data_frame(evs, parameters)
     return evs, evs_df
+
+def load_walls_from_xml(directory, file_name, parameters = ['id', 'x', 'y', 'p1x', 'p1y', 'p2x', 'p2y', 'cell_direction']):
+    """
+    Produces a list of dictionaries and a dataframe with the EVs in a state file specified
+    """
+    [itno, environment, secretory, ciliary, _, _, grid_secretory, grid_ciliary,
+        grid_all, grid_evs] = persistency.read_xml(directory, file_name)
+    all_walls = secretory + ciliary
+    all_walls_df = persistency.agent_data_to_data_frame(all_walls, parameters)
+    return all_walls, all_walls_df, grid_all_walls
 
 # shapely
 def produce_polygon_with_holes(polygon, holes):
@@ -72,7 +82,7 @@ def produce_path_subtracted(subtracted):
     Produces a HoloViews Path from a Shapely Polygon with holes
     """
     ecoords = np.array(subtracted.exterior.coords[:])
-    
+
     if len(subtracted.interiors) > 1:
         icoords=[interior.coords[:] for interior in subtracted.interiors]
         hv_path = hvPath(icoords) * hvPath({'x':ecoords[:,0], 'y':ecoords[:,1]})
@@ -81,7 +91,7 @@ def produce_path_subtracted(subtracted):
         hv_path = hvPath({'x':icoords[:,0], 'y':icoords[:,1]}) * hvPath({'x':ecoords[:,0], 'y':ecoords[:,1]})
     else:
         hv_path = hvPath({'x':ecoords[:,0], 'y':ecoords[:,1]})
-    
+
     return hv_path
 
 #%%
@@ -144,14 +154,14 @@ def holes_in_shape_at_d_1(linestring, simplifying = None):
 def produce_interiors_from_exteriors(exteriors, simplifying=None):
     # the polygons here would be already simplified
     interiors = [list() for i in range(len(exteriors))]
-    
+
     inner_holes = 0
     for idx in range(len(exteriors)):
         interiors[idx] = produce_list_of_LinearRings(holes_in_shape_at_d_1(
             exteriors[idx], simplifying))
         print(f'      {idx + 1:3d}/{len(exteriors)} -> {len(interiors[idx])} shapes')
         inner_holes += len(interiors[idx])
-    
+
     print('Computed', inner_holes,'interior shapes for this distance')
     return interiors
 
@@ -170,7 +180,7 @@ def load_persisted_data(section_name, d, base_path='resources/analysis'):
     interior_pickle = f'{base_path}/data_v2_{section_name}_{d}_interiors.pickle.bz2'
     exterior_pickle = f'{base_path}/data_v2_{section_name}_{d}_exteriors.pickle.bz2'
     print(f'    loading data for d={d} from {interior_pickle} and {exterior_pickle}')
-    
+
     with bz2.BZ2File(exterior_pickle, 'r') as source:
         exteriors = pickle.load(source)
     with bz2.BZ2File(interior_pickle, 'r') as source:
@@ -200,7 +210,7 @@ def get_LinearRing_gt3(element, t):
         lr = LinearRing(element)
     elif t is LinearRing:
         lr = element
-    
+
     if len(lr.coords) > 3:
         if lr.is_ccw:
             return lr
@@ -219,7 +229,7 @@ def produce_list_of_LinearRings(elements):
                     lr = get_LinearRing_gt3(ls, tls)
                     if lr:
                         new_line_strings.append(lr)
-                else: 
+                else:
                     print('Interior in List not a LineString or LinearRing but a', tls)
         elif t is LinearRing or t is LineString:
             lr = get_LinearRing_gt3(element, t)
@@ -239,11 +249,11 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
     4. Compute the missing distances required persisting to disk at each level
 
     The sources used for computing the shapes is related to the distance being
-    computed. For d=1, the original polygons are used. For larger values of d, 
+    computed. For d=1, the original polygons are used. For larger values of d,
     the interior shapes computed for the preceding distance are used. Note: not
     all polygons will exist at every distance, some will eventually disapear as
     their size will be progresively reduced through the process.
-        
+
     structures in use
     shapes_at_d = {'utj':{
     1 : {'exterior':[0,1,2,3],
@@ -253,20 +263,20 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
                       [0]]}, <- produced from exterior 3
     2: {'exterior':[0, 1, 2, 3, 4], <- the interior shapes from the last distance
                                         become the exterior's of the next distance
-        'interior':[[0], [], [0, 1], [0]]} <- thus, these would be produced from 
+        'interior':[[0], [], [0, 1], [0]]} <- thus, these would be produced from
     }, 'ampulla: {1:{'exterior'=[], 'interior':[]}} ..
                                   the new exteriors, not from the previous exteriors
     For exteriors with no interior shapes, an empty list should be stored
     The link between interiors-exteriors is given by the indexes from the containing
     lists. Therefore, the shapes in interior[4] would match to those in exterior[4]
-    
-    The lists of exteriors and interiors for a given distance will be persisted 
+
+    The lists of exteriors and interiors for a given distance will be persisted
     to disk immediately after their computation is completed. These files would
     be independent from those produced for other distances.
     }
     """
     last_d = identify_last_distance_available(section, base_path)
-    
+
     shapes_at_d = {} # key: 'section_name', values: dictionaries of {distance: holes}
 
     if last_d > 0:
@@ -275,7 +285,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
         shapes_at_d[d] = dict()
         shapes_at_d[d]['exterior'], shapes_at_d[d]['interior'] = load_persisted_data(section, d, base_path)
         print('  Loaded shapes for distance: ', d)
-    
+
     # NOW we CAN compute the holes for the distances between last_d and target_distance
     r = [c for c in range(last_d + 1, target_distance + 1)]
     for d in r:
@@ -284,7 +294,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
                 exteriors = [polygon.simplify(simplifying).exterior for polygon in environment.load_polygons(section)]
             else:
                 exteriors = [polygon.exterior for polygon in environment.load_polygons(section)]
-                
+
             print('    Start processing from d=0...\n      The initial polygon(s) contain(s)', len(exteriors), 'exterior LineStrings.')
         else:
             # obtain the new exteriors from the interiors from the previous distance
@@ -305,7 +315,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
         shapes_at_d[d] = {}
         shapes_at_d[d]['exterior'] = exteriors
         shapes_at_d[d]['interior'] = interiors
-        
+
     return shapes_at_d
 
 #%%
@@ -343,7 +353,7 @@ def produce_prepared_polygons(section, d, base_path='resources/analysis'):
         # load previous results and store in the general collection
         exteriors, interiors = load_persisted_data(section, d, base_path)
         print('  Loaded shapes for distance: ', d)
-        
+
         polygons = []
         prepared_polygons = []
 
@@ -352,7 +362,7 @@ def produce_prepared_polygons(section, d, base_path='resources/analysis'):
 
             polygons.append(poly)
             prepared_polygons.append(prep(poly))
-        
+
         return polygons, prepared_polygons
 
 #%%
@@ -379,11 +389,11 @@ if __name__ == '__main__':
     if '-S' in opts:
         simplifying = float(opts['-S'])
         print('Polygon simplification enabled, tolerance:', simplifying)
-    
+
     if '-P' in opts:
         base_path = opts['P']
         print('Using non-default base path:', base_path)
-    
+
     if '-s' in opts:
         if len(args) == 1:
             d = args[0]
@@ -394,7 +404,7 @@ if __name__ == '__main__':
             print('ERROR No distance specified')
             print(help, file=sys.stderr)
             sys.exit
-    
+
     if '-p' in opts:
         if len(args) == 1:
             d = args[0]
@@ -405,3 +415,4 @@ if __name__ == '__main__':
             print('ERROR, no diatance specified')
             print(help, file=sys.stderr)
             sys.exit
+

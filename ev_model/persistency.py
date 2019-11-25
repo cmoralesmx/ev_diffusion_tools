@@ -5,11 +5,11 @@ from lxml import etree
 import pandas as pd
 import sys
 
-def save_0xml_file(evs, n, dt, degrees_of_freedom, base_filename, 
-        target_source_points_per_cell, base_dir='resources/iterations', version=0, 
+def save_0xml_file(evs, n, dt, degrees_of_freedom, base_filename,
+        target_source_points_per_cell, base_dir='resources/iterations', version=0,
         boundaries=False, ev_ev_collisions=False, cells=None, new_evs=False,
-        new_evs_interval_seconds=30.0, new_evs_threshold=0.9, 
-        seconds_in_initial_state=2.0, min_ev_radius=40, max_ev_radius=120, 
+        new_evs_interval_seconds=30.0, new_evs_threshold=0.9,
+        seconds_in_initial_state=2.0, min_ev_radius=40, max_ev_radius=120,
         ev_viability=3600):
 
     experiment_directory = f"{base_filename}_{n/1000:.1f}k_{'intCol' if ev_ev_collisions else 'noCol'}{'_newEvs' if new_evs else ''}"
@@ -75,6 +75,11 @@ def parse_agent(elem):
         for child in elem.getchildren():
             if child.text is None:
                 value = None
+            elif child.text == 'nan' or child.text == '-inf' or child.text == 'inf':
+                value = None
+                if 'errors_parsing' not in data:
+                    data['errors_parsing'] = list()
+                data['errors_parsing'].append(child.tag)
             elif '.' in child.text:
                 if ',' in child.text:
                     value = [float(tx.replace('f', '')) for tx in child.text.split(',')]
@@ -98,53 +103,67 @@ def parse_agent(elem):
         return None
 
 def parse_all_agents(tree):
-    ciliary = []
-    secretory = []
-    evs = []
+    """
+    evs[] contains a dictionary of tags:values as parsed from XML
+    the grid based storages 'storage_name_g' contain the agents as Objects
+    evs_with_errors contain the EVs as Objects
+    """
+    ciliary = {'objects':list(), 'dictionaries':list()}
+    secretory = {'objects':list(), 'dictionaries':list()}
+    evs = {'objects':list(), 'dictionaries':list()}
+    evs_with_errors = {'objects':list(), 'dictionaries':list()}
     secretory_g = elements.GridStorage(5)
     ciliary_g = elements.GridStorage(5)
     all_cells_g = elements.GridStorage(5)
     evs_g = elements.GridStorage(5)
-    problems_count = 0
 
     for elem in tree.xpath('//xagent'):
         agent = parse_agent(elem)
-        if agent is None:
-            problems_count += 1
-            continue
 
         if agent['name'] == 'SecretoryCell':
             if 'source_points' in agent and agent['source_points'] > len(agent['source_points_xs']):
                 agent['source_points_xs'] = agent['source_points_xs'][:agent['source_points']]
                 agent['source_points_ys'] = agent['source_points_ys'][:agent['source_points']]
             del(agent['name'])
-            secretory.append(agent)
+            secretory['dictionaries'].append(agent)
             extendedCell = elements.ExtendedCell(agent)
+            secretory['objects'].append(extendedCell)
             secretory_g.store(extendedCell)
             all_cells_g.store(extendedCell)
 
         elif agent['name'] == 'CiliaryCell':
             del(agent['name'])
-            ciliary.append(agent)
+            ciliary['dictionaries'].append(agent)
             extendedCell = elements.ExtendedCell(agent)
+            ciliary['objects'].append(extendedCell)
             ciliary_g.store(extendedCell)
             all_cells_g.store(extendedCell)
 
         elif agent['name'] == 'EV':
             ev = elements.EV()
             del(agent['name'])
-            #for tag, value in agent.items:
+            # for each agent variable parsed from XML, add the value read
+            # to the EV object as an attribute. 
+            # If NaNs were found, the agent is not added to the
+            # general storage but to a list of evs with errors
             try:
                 ev._id = int(agent['id'])
                 for tag, value in agent.items():
                     setattr(ev, tag, value)
-                evs_g.store(ev)
+
+                if 'errors_parsing' in agent:
+                    evs_with_errors['objects'].append(ev)
+                    evs_with_errors['dictionaries'].append(agent)
+                else:
+                    evs_g.store(ev)
+                    evs['objects'].append(ev)
+                    evs['dictionaries'].append(agent)
             except AttributeError as err:
                 print('Agent does not contain an attibute', agent)
                 print(err)
-            evs.append(agent)
-    print('Agents not parsed due to errors:',problems_count)
-    return secretory, ciliary, evs, secretory_g, ciliary_g, all_cells_g, evs_g
+    #print('Agents not parsed due to errors:',problems_count)
+    return [secretory, ciliary, evs, evs_with_errors, secretory_g, ciliary_g,
+            all_cells_g, evs_g]
 
 def read_xml(p, xml_file):
     filename = path.join(p, xml_file)
@@ -154,8 +173,9 @@ def read_xml(p, xml_file):
 
     itno = int(tree.xpath('/states/itno')[0].text)
     environment = parse_environment(tree)
-    secretory, ciliary, evs, *grids = parse_all_agents(tree)
-    return itno, environment, secretory, ciliary, evs, grids 
+    secretory, ciliary, evs, evs_with_errors, *grids = parse_all_agents(tree)
+    print('read_xml len(grids):', len(grids))
+    return [itno, environment, secretory, ciliary, evs, evs_with_errors, grids]
 
 def agent_data_to_data_frame(agents, parameters):
     columns = {}
@@ -172,5 +192,6 @@ def agent_data_to_data_frame(agents, parameters):
     return pd.DataFrame.from_dict(columns)
 
 def agent_data_to_data_frame_with_selection(agents, parameters, selected_elements):
-    df = agent_data_to_data_frame(agents, parameters) 
+    df = agent_data_to_data_frame(agents, parameters)
     return [df, df.index[df.id.isin(selected_elements)].tolist()]
+
