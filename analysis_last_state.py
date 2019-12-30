@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """\
-USE: python <PROGNAME> (options)
+USE: python <PROGNAME> OPTIONS
+examples:
+python <PROGNAME> -s isthmus -S 0.2 10
+python <PROGNAME> -s ampulla -S 0.1 15 -P resources/analysis_simplified
+
 Computes 1um cannals from the boundaries of the cross section towards the
 centroid of the cross sections from the five oviduct sections available.
 
@@ -10,6 +14,8 @@ OPTIONS:
     -h : print this help message and exit
     -s SEGMENT : Compute internal shapes at distance from the external shape in the segment
     -p SEGMENT : Produce prepared polygons for topological queries.
+    -S TOLERANCE: Enables shape simplification using the tolerance specified [0.0 - 1.0]
+    -P PATH: Alternative path where resources are expected
     d : distance to compute [1-10]
 """
 
@@ -152,7 +158,7 @@ def holes_in_shape_at_d_1(linestring, simplifying = None):
     return holes
 
 def produce_interiors_from_exteriors(exteriors, simplifying=None):
-    # the polygons here would be already simplified
+    # the polygons here would already be simplified
     interiors = [list() for i in range(len(exteriors))]
 
     inner_holes = 0
@@ -206,6 +212,11 @@ def check_list_of_LinearRings(elements):
                 raise ValueError('Is not a list but a', type(element))
 
 def get_LinearRing_gt3(element, t):
+    """
+    Creates a LinearRing using the 'element' provided.
+    This function will only return the LinearRing created if
+    it is composed of more than 3 coordinates
+    """
     if t is LineString:
         lr = LinearRing(element)
     elif t is LinearRing:
@@ -239,8 +250,27 @@ def produce_list_of_LinearRings(elements):
             print('interior is not a list or LineString but a', t)
     return new_line_strings
 
+def load_all_holes_in_polygons(section_name, target_distance, base_path='resources/analysis'):
+    last_d = identify_last_distance_available(section_name, base_path)
+
+    shapes_at_d = {} # key: 'section_name', values: dictionaries of {distance: holes}
+
+    if last_d >= target_distance:
+        # load last results available or target_distance and store in the general collection
+        for d in range(1, target_distance + 1 if last_d > target_distance else last_d + 1):
+            shapes_at_d[d] = dict()
+            shapes_at_d[d]['exterior'], shapes_at_d[d]['interior'] = load_persisted_data(section_name, d, base_path)
+            print('  Loaded shapes for distance: ', d)
+        return shapes_at_d
+    else:
+        print('Required not available, needs to be computed first')
+        print('Last distance available', last_d)
+
+    return None
+
+
 #%%
-def compute_all_holes_in_polygons(section, target_distance, base_path='resources/analysis', simplifying=None):
+def compute_all_holes_in_polygons(section_name, target_distance, base_path='resources/analysis', simplifying=None):
     """
     1. Check what distances have been computed in the past
     2. If files for previous distances exist:
@@ -266,7 +296,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
         'interior':[[0], [], [0, 1], [0]]} <- thus, these would be produced from
     }, 'ampulla: {1:{'exterior'=[], 'interior':[]}} ..
                                   the new exteriors, not from the previous exteriors
-    For exteriors with no interior shapes, an empty list should be stored
+    For exteriors with no interior shapes, an empty list should be stored.
     The link between interiors-exteriors is given by the indexes from the containing
     lists. Therefore, the shapes in interior[4] would match to those in exterior[4]
 
@@ -275,7 +305,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
     be independent from those produced for other distances.
     }
     """
-    last_d = identify_last_distance_available(section, base_path)
+    last_d = identify_last_distance_available(section_name, base_path)
 
     shapes_at_d = {} # key: 'section_name', values: dictionaries of {distance: holes}
 
@@ -283,7 +313,7 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
         # load last results available or target_distance and store in the general collection
         d = target_distance if target_distance < last_d else last_d
         shapes_at_d[d] = dict()
-        shapes_at_d[d]['exterior'], shapes_at_d[d]['interior'] = load_persisted_data(section, d, base_path)
+        shapes_at_d[d]['exterior'], shapes_at_d[d]['interior'] = load_persisted_data(section_name, d, base_path)
         print('  Loaded shapes for distance: ', d)
 
     # NOW we CAN compute the holes for the distances between last_d and target_distance
@@ -291,9 +321,9 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
     for d in r:
         if d == 1:
             if simplifying:
-                exteriors = [polygon.simplify(simplifying).exterior for polygon in environment.load_polygons(section)]
+                exteriors = [polygon.simplify(simplifying).exterior for polygon in environment.load_polygons(section_name)]
             else:
-                exteriors = [polygon.exterior for polygon in environment.load_polygons(section)]
+                exteriors = [polygon.exterior for polygon in environment.load_polygons(section_name)]
 
             print('    Start processing from d=0...\n      The initial polygon(s) contain(s)', len(exteriors), 'exterior LineStrings.')
         else:
@@ -303,18 +333,24 @@ def compute_all_holes_in_polygons(section, target_distance, base_path='resources
         start = time.time()
         interiors = produce_interiors_from_exteriors(exteriors, simplifying)
 
-        persist_shapes_to_disk(d, section, exteriors, interiors, base_path)
-        elapsed = time.time() - start
-        if elapsed < 60:
-            print(f'    Elapsed {elapsed:.2f} seconds')
-        else:
-            m = elapsed // 60
-            print(f"    Elapsed {m} {'minutes' if m > 1 else 'minute'} and {elapsed - (m * 60): .2f} seconds")
+        if len(interiors) > 1:
+            persist_shapes_to_disk(d, section_name, exteriors, interiors, base_path)
 
-        # add to the general collection
-        shapes_at_d[d] = {}
-        shapes_at_d[d]['exterior'] = exteriors
-        shapes_at_d[d]['interior'] = interiors
+            # add to the general collection
+            shapes_at_d[d] = {}
+            shapes_at_d[d]['exterior'] = exteriors
+            shapes_at_d[d]['interior'] = interiors
+
+            elapsed = time.time() - start
+            if elapsed < 60:
+                print(f'    Elapsed {elapsed:.2f} seconds')
+            else:
+                m = elapsed // 60
+                print(f"    Elapsed {m} {'minutes' if m > 1 else 'minute'} and {elapsed - (m * 60): .2f} seconds")
+        else:
+            print('0 interiors produced, aborting persistency to disk')
+            print('Aborting the rest of the process')
+            break
 
     return shapes_at_d
 
@@ -340,10 +376,10 @@ def identify_last_distance_available(section_name, base_path='resources/analysis
     else:
         raise ValueError('target DOES NOT exist or IS NOT a directory')
 
-def produce_prepared_polygons(section, d, base_path='resources/analysis'):
+def produce_prepared_polygons(section_name, d, base_path='resources/analysis'):
     from shapely.prepared import prep
 
-    last_d = identify_last_distance_available(section, base_path)
+    last_d = identify_last_distance_available(section_name, base_path)
 
     if last_d == 0:
         print('ERROR, exterior and interior shapes are not available')
@@ -351,7 +387,7 @@ def produce_prepared_polygons(section, d, base_path='resources/analysis'):
         print('ERROR, exterior and interior shapes are not available at the desired distance')
     else:
         # load previous results and store in the general collection
-        exteriors, interiors = load_persisted_data(section, d, base_path)
+        exteriors, interiors = load_persisted_data(section_name, d, base_path)
         print('  Loaded shapes for distance: ', d)
 
         polygons = []
@@ -365,12 +401,10 @@ def produce_prepared_polygons(section, d, base_path='resources/analysis'):
 
         return polygons, prepared_polygons
 
-#%%
-#section = 'ia-junction'
-#shapes_at_d = compute_all_holes_in_polygons(section, 3)
-#identify_last_distance_available(section, 6, './resources/analysis')
-
-#produce_polygon_with_holes()
+def show_help(progname):
+    progname = progname.split('/')[-1]
+    help = __doc__.replace('<PROGNAME>', progname)
+    print(help, file=sys.stderr)
 
 if __name__ == '__main__':
     opts, args = getopt.getopt(sys.argv[1:], 'hS:s:P:')
@@ -380,10 +414,7 @@ if __name__ == '__main__':
     simplifying = None
 
     if '-h' in opts:
-        progname = sys.argv[0]
-        progname = progname.split('/')[-1]
-        help = __doc__.replace('<PROGNAME>', progname, 1)
-        print(help, file=sys.stderr)
+        show_help(sys.argv[0])
         sys.exit()
 
     if '-S' in opts:
@@ -404,15 +435,17 @@ if __name__ == '__main__':
             print('ERROR No distance specified')
             print(help, file=sys.stderr)
             sys.exit
-
-    if '-p' in opts:
+    elif '-p' in opts:
         if len(args) == 1:
             d = args[0]
             section = opts['-o']
             print('Producing prepared polygons for topological querys for section', section, 'distance', d)
             produce_prepared_polygons(section, distance, base_path)
         else:
-            print('ERROR, no diatance specified')
+            print('ERROR, no distance specified')
             print(help, file=sys.stderr)
             sys.exit
+    else:
+        show_help(sys.argv[0])
+        sys.exit()
 
