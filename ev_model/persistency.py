@@ -54,8 +54,7 @@ def save_0xml_file(evs, n, dt, degrees_of_freedom, base_filename,
             of.write(ev.get_xml_description(degrees_of_freedom, seconds_in_initial_state))
 
         # close the file
-        of.write("""
-</states>""")
+        of.write("""\n</states>""")
 
     print(f'file saved as: {f0}')
 
@@ -85,11 +84,45 @@ def parse_agent(elem):
                     value = [float(tx.replace('f', '')) for tx in child.text.split(',')]
                 else:
                     value = float(child.text.replace('f', ''))
-            elif child.tag =='name':
+            elif child.tag == 'name':
                 value = child.text
             else:
                 value = int(child.text)
             data[child.tag] = value
+        return data
+    except ValueError as e:
+        print('Error in',elem.xpath('child::name')[0].text,
+            'id', elem.xpath('child::id')[0].text,'attribute',child.tag,
+            'error:', e)
+        return None
+    except:
+        print('Error in elem', elem.xpath('child::name')[0].text,
+            'id', elem.xpath('child::id')[0].text,'child',child.tag,
+            'error:', sys.exc_info()[0])
+        return None
+
+def parse_ev_agent(elem):
+    data = {}
+    try:
+        for child in elem.getchildren():
+            if child.text is None:
+                value = None
+            elif child.text == 'nan' or child.text == '-inf' or child.text == 'inf':
+                value = None
+                if 'errors_parsing' not in data:
+                    data['errors_parsing'] = list()
+                data['errors_parsing'].append(child.tag)
+            elif '.' in child.text:
+                if ',' in child.text:
+                    value = [float(tx.replace('f', '')) for tx in child.text.split(',')]
+                else:
+                    value = float(child.text.replace('f', ''))
+            elif child.tag == 'name':
+                value = child.text
+            else:
+                value = int(child.text)
+            if child.tag in ['id', 'x', 'y', 'z', 'age','name', 'radius_um']:
+                data[child.tag] = value
         return data
     except ValueError as e:
         print('Error in',elem.xpath('child::name')[0].text,
@@ -165,19 +198,54 @@ def parse_all_agents(tree):
     return [secretory, ciliary, evs, evs_with_errors, secretory_g, ciliary_g,
             all_cells_g, evs_g]
 
-def read_xml(p, xml_file):
+def parse_ev_agents(filename):
+    """
+    evs contains a list of dictionary-based representations of the EVs as parsed from the XML
+    """
+    import xmltodict
+
+    evs = []
+
+    def parse_ev_agent_callback(_, element):
+        if 'name' in element and element['name'] == 'EV':
+            # add this EV to the collection
+            evs.append({
+                'id': int(element['id']),
+                'x': float(element['x']),
+                'y': float(element['y']),
+                'radius_um': float(element['radius_um']),
+                'age': float(element['age'])
+            })
+        return True
+
+    with open(filename, 'rb') as xmlinput:
+        xmltodict.parse(xmlinput, item_depth=2, item_callback=parse_ev_agent_callback)
+
+    #print('Agents not parsed due to errors:',problems_count)
+    return evs
+
+def read_xml(p, xml_file, ev_only=False):
+    """
+    if ev_only is enabled, returns a list of dictionaries and a list of objects
+    both representing the EVs as parsed from XML plus another list which
+    contains the evs producing errors while parsing
+    """
     filename = path.join(p, xml_file)
 
-    with open(filename,'r') as f:
-        tree = etree.parse(f)
+    if ev_only:
+        evs = parse_ev_agents(filename)
+        return evs
+    else:
+        with open(filename,'r') as f:
+            tree = etree.parse(f)
+        itno = int(tree.xpath('/states/itno')[0].text)
+        environment = parse_environment(tree)
 
-    itno = int(tree.xpath('/states/itno')[0].text)
-    environment = parse_environment(tree)
-    secretory, ciliary, evs, evs_with_errors, *grids = parse_all_agents(tree)
-    print('read_xml len(grids):', len(grids))
-    return [itno, environment, secretory, ciliary, evs, evs_with_errors, grids]
+        secretory, ciliary, evs, evs_with_errors, *grids = parse_all_agents(tree)
+        print('read_xml len(grids):', len(grids))
+        return [itno, environment, secretory, ciliary, evs, evs_with_errors, grids]
 
-def agent_data_to_data_frame(agents, parameters):
+def agent_data_to_data_frame(agents, parameters=['id', 'x', 'y', 'age', 'radius_um']):
     columns = {}
     for parameter in parameters:
         columns[parameter] = list()
@@ -191,7 +259,12 @@ def agent_data_to_data_frame(agents, parameters):
 
     return pd.DataFrame.from_dict(columns)
 
-def agent_data_to_data_frame_with_selection(agents, parameters, selected_elements):
+def agent_data_to_data_frame_with_selection(agents, selected_elements, parameters=['id', 'x', 'y', 'age', 'radius_um']):
     df = agent_data_to_data_frame(agents, parameters)
     return [df, df.index[df.id.isin(selected_elements)].tolist()]
 
+def agent_data_to_data_frame_without_selection(agents, selected_elements, parameters=['id', 'x', 'y', 'age', 'radius_um']):
+    df = agent_data_to_data_frame(agents, parameters)
+    df_oob = df[df.id.isin(selected_elements)]
+    df_inbounds = df[~df.id.isin(selected_elements)]
+    return [df_inbounds, df_oob]
