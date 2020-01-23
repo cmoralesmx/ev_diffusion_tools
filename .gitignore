@@ -129,3 +129,6 @@ dmypy.json
 
 # Folder storing debugging logs
 debug/
+
+# Resources folders storing the results of the analysis
+resources/analysis/output/
