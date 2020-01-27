@@ -205,18 +205,7 @@ def select_and_load_polygons_specified(polygons_to_load, polygons_available):
     
     return user_polys_loaded, user_polys
 
-def display_polygons_loaded(user_polys, hvPolys_selected):
-    upolys = hv.Polygons(user_polys if user_polys else [])
-
-    # http://holoviews.org/getting_started/Gridded_Datasets.html
-    centroids = [Polygon([pair for pair in zip(p['x'],p['y'])]).centroid.coords[:] for p in upolys.data]
-
-    # https://holoviews.org/reference/elements/bokeh/Labels.html
-    labels = hv.Labels([(cent[0][0],cent[0][1],i+1) for i, cent in enumerate(centroids)])
-
-    poly_streams = streams.PolyDraw(source=upolys, drag=True)
-
-    n_selected = len(hvPolys_selected) 
+def concatenate_polygons_list(hvPolys_selected, n_selected):
     if n_selected == 2:
         hvPolys_selected_list = hvPolys_selected[1] * hvPolys_selected[0]
     elif n_selected == 3:
@@ -235,8 +224,46 @@ def display_polygons_loaded(user_polys, hvPolys_selected):
         hvPolys_selected_list = hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
     elif n_selected == 10:
         hvPolys_selected_list = hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
+    elif n_selected == 11:
+        hvPolys_selected_list = hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
+    elif n_selected == 12:
+        hvPolys_selected_list = hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
+    elif n_selected == 13:
+        hvPolys_selected_list = hvPolys_selected[12] * hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
+    elif n_selected == 14:
+        hvPolys_selected_list = hvPolys_selected[13] * hvPolys_selected[12] * hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
+    return hvPolys_selected_list
+
+def display_polygons_loaded(user_polys, hvPolys_selected, section_name):
+    upolys = hv.Polygons(user_polys if user_polys else [])
+
+    # http://holoviews.org/getting_started/Gridded_Datasets.html
+    centroids = [Polygon([pair for pair in zip(p['x'],p['y'])]).centroid.coords[:] for p in upolys.data]
+
+    # https://holoviews.org/reference/elements/bokeh/Labels.html
+    labels = hv.Labels([(cent[0][0],cent[0][1],i+1) for i, cent in enumerate(centroids)])
+
+    poly_streams = streams.PolyDraw(source=upolys, drag=True)
+
+    n_selected = len(hvPolys_selected) 
+    hvPolys_selected_list = concatenate_polygons_list(hvPolys_selected, n_selected)
+
+    # produce a HoloViews layout with all the elements
+    all_elements = hvPolys_selected_list * upolys.opts(fill_alpha=0.5, active_tools=['poly_draw']) * labels
+
+    # save the plot as svg and png
+    hv.save(all_elements, f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.png', fmt='png')
         
-    return (hvPolys_selected_list * upolys.opts(fill_alpha=0.5, active_tools=['poly_draw']) * labels), poly_streams
+    # exporting directly from bokeh works but has the following dependencies plus prior to launching the jupyter-lab executing in the terminal: export OPENSSL_CONF=/etc/ssl/
+    #!conda install -c bokeh selenium -y
+    #!conda install selenium pillow -y
+    #!npm install -g phantomjs-prebuilt
+    #
+    render =  hv.render(all_elements, backend='bokeh')
+    render.output_backend = "svg"
+    export_svgs(render, filename=f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.svg')
+        
+    return all_elements, poly_streams
 
 # stats and plots
 def save_polygons_for_reuse(poly_streams, user_polys_loaded, section):
@@ -367,7 +394,7 @@ def compute_stats_per_distance_per_polygon(evs_at_distance_in_polygon_per_size):
                 counts[p][d][s] = {'counts':numbers, 'mean':np.mean(numbers), 'std':np.std(numbers)}
     return counts, max_freq
 
-def produce_size_distribution_histograms_per_polygon(counts, sizes, edges, max_freq, columns=2, section_name=None):
+def produce_size_distribution_histograms_per_polygon(counts, sizes, edges, max_freq, columns=2, section_name=None, return_histograms=False):
     freqs = {}
     errors = {}
     histograms = []
@@ -418,10 +445,12 @@ def produce_size_distribution_histograms_per_polygon(counts, sizes, edges, max_f
         histograms.append(hist_w_errors + vtable.opts(
             height=400, title=f'Values producing the histogram for ROI #{i+1}')
             )
-    
-    return hv.Layout(histograms).cols(columns)
+    if return_histograms:
+        return hv.Layout(histograms).cols(columns)
+    else:
+        return None
 
-def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, edges, max_freq, from_to, columns=2, section_name=None):
+def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, edges, max_freq, from_to, columns=2, section_name=None, return_histograms=False):
     freqs = {}
     errors = {}
     histograms = []
@@ -476,7 +505,10 @@ def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, 
             histograms.append(hist_w_errors + vtable.opts(
                 height=400, title=f'Histogram values, ROI #{p+1} within {from_to[inverted_d]}um')
                 )
-    return hv.Layout(histograms).cols(columns)
+    if return_histograms:
+        return hv.Layout(histograms).cols(columns)
+    else:
+        return None
 
 def load_walls_from_xml(directory, file_name, parameters = ['id', 'x', 'y', 'p1x', 'p1y', 'p2x', 'p2y', 'cell_direction']):
     """
