@@ -11,7 +11,7 @@ from ev_model.utilities import geometry as evmetry
 
 sections = {
     'utj': 'resources/img_polygons/3-1to3-5_L2-3_bl-utj.pickle',
-    'isthmus': 'resources/img_polygons/3-1to3-5_L2-3_tl-isth.pickle',
+    'isthmus': 'resources/img_polygons/3-1to3-5_L2-3_tl-isth_fixed.pickle',
     'ia-junction': 'resources/img_polygons/3-1to3-5_L2-3_c.pickle',
     'ampulla': 'resources/img_polygons/3-1to3-5_L2-3_tr-amp_2.pickle',
     'infundibulum': 'resources/img_polygons/3-1to3-5_L2-3_br-inf.pickle'
@@ -285,8 +285,8 @@ def produce_cells(segments, probabilistic = False, threshold_secretory = 0.8,
                 pass
             else:
                 # check secretory cells in close range
-                for cell_id in cell_range:
-                    for secretory_cell in grid[cell_id]:
+                for g_cell_id in cell_range:
+                    for secretory_cell in grid[g_cell_id]:
                         d = evmetry.two_points_distance(segment.location,
                             secretory_cell.location)
                         dp = np.dot(segment.unit_normal, secretory_cell.unit_normal)
@@ -295,7 +295,7 @@ def produce_cells(segments, probabilistic = False, threshold_secretory = 0.8,
                             break
 
             if probabilistic and random.random() < threshold_secretory:
-                    passes_secretory_checks = False
+                passes_secretory_checks = False
 
         if passes_secretory_checks:
             cell = elements.SecretoryCell(cell_id, segment.p1[0], segment.p1[1],
@@ -328,7 +328,7 @@ def at_safe_distance_to_near_secretory_cells(secretory, segment, shortest_secret
     # checks secretory cells already allocated in the region
     # if two segments facing opposing directions are closer than
     # 2xlargest_ev_diameter_um, only one of them can become a Secretory cell
-    _, cell_range = secretory.nearest_cells(segment.mp[0], segment.mp[1])
+    _, cell_range = secretory.nearest_cells_for_coordinates(segment.mp[0], segment.mp[1])
     for cell_id in cell_range:
         for secretory_cell in secretory[cell_id].values():
             d = evmetry.two_points_distance(segment.location, secretory_cell.location)

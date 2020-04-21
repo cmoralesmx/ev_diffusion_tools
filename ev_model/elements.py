@@ -358,8 +358,8 @@ class GridStorage():
         return self.nearest_cells_for_cell_index(cell_index)
 
     def nearest_cells_for_cell_index(self, cell_index):
-        min_x = cell_index[0] - 1
-        min_y = cell_index[1] - 1
+        min_x = int(cell_index[0] - 1)
+        min_y = int(cell_index[1] - 1)
         return cell_index, [c for c in [(x,y)
                 for x in range(min_x, min_x + 3)
                 for y in range(min_y, min_y + 3)] if c in self.grid]
@@ -383,7 +383,7 @@ class GridStorage():
         for fetching the elements directly instead of doing a lookup in the grid.
         """
         # cell level index, (x,y)
-        cell_idx = (int(element.x), int(element.y))
+        cell_idx = (int(element.mp[0]), int(element.mp[1]))
         # grid level index, (x//grid_size, y//grid_size)
         target_cell = self.what_cell(cell_idx[0], cell_idx[1])
 

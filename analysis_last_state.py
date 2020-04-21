@@ -65,17 +65,18 @@ def load_experiment_data(base_path, replicates=None, target_iteration='2880000')
         evs = []
         print('Processing', replicates, 'replicates')
         for i in range(1, replicates+1):
-            evs_d = load_experiment_replicate(base_path + '_r' + str(i) + '/', target_iteration)
+            evs_d = load_experiment_replicate(base_path + 'r' + str(i) + '/', target_iteration)
             evs.append(evs_d)
     else:
         print('Processing a single repeat')
         if base_path[-1:] != '/':
             base_path += '/'
         evs_d = load_experiment_replicate(base_path, target_iteration)
-    print('Done loading data')
+    print('Done loading data for', len(evs), 'replicates')
     return evs
 
 def load_experiment_replicate(base_path, target_iteration, debug=False):
+    print('load_experiment_replicate() running')
     if type(target_iteration) is not str:
         target_iteration = str(target_iteration)
     # target pickle
@@ -84,8 +85,8 @@ def load_experiment_replicate(base_path, target_iteration, debug=False):
 
     if tp_file.exists() and not tp_file.is_dir():
         if debug:
-            print('Pickled dictionary files exist at')
-            print(tp)
+            print('\tPickled dictionary files exist at')
+            print('\t',tp)
         
         # load the pickled dictionaries
         with bz2.BZ2File(tp, 'rb') as pickled_file:
@@ -104,6 +105,7 @@ def load_experiment_replicate(base_path, target_iteration, debug=False):
             print('Dictionary saved to:',tp)
     if debug:
         print('Total evs loaded as dictionaries:',len(evs))
+    print('load_experiment_replicate() DONE')
     return evs
 
 def filter_oob_from_repeats(shape, all_evs_in_repeats, debug=False):
@@ -146,12 +148,39 @@ def filter_oob_from_repeats(shape, all_evs_in_repeats, debug=False):
 
 # analysis setup
 def prepare_analysis(section, targets, distances_selected, base_path, replicates, target_iteration):
+    """
+    input:
+    section - name of the section
+    targets - dictionary with target distance (for the 'buffer') per section
+    distances_selected - list of distances to use in the analysis
+    base_path - string representing the path containing the files for the experiment
+    replicates - a numeric representation of the number of replicates in the experiment
+    target_iteration - a numeric representation of the iteration to read
+
+    output:
+    analysis['shrinked_shplyPolys'] - the full set of shrinked polygons ordered from max to min area (0-N distance)
+    analysis['optimized_shplyPolys'] - copy of the full set of polygons, optimized for querying (0-N distance)
+    analysis['hvPolys'] - copy of the full set of polygons, optimized for visualization (0-N distance)
+    analysis['distances_selected'] - list of distances selected, as received in distances_selected
+    analysis['base_path'] - string, as received in base_path
+    analysis['replicates'] - integer, as received in replicates
+    analysis['target_iteration'] - string representation of target_iteration
+    analysis['opt_polys_selected'] - subset of analysis['optimized_shplyPolys'] ordered in reverse (N-0 distance)
+    analysis['polys_selected'] - subset of analysis['shrinked_shplyPolys'] ordered in reverse (N-0 distance)
+    analysis['hvPolys_selected'] - subset of analysis['hvPolys'] ordered in reverse (N-0 distance)
+    analysis['from_to'] - list of lists containing the low-high values for each step/range of the selected distances in 0-N order
+    analysis['from_to_reversed'] - copy of analysis['from_to'] ordered N-0
+    """
     analysis = dict()
     analysis['shrinked_shplyPolys'] = load_shrinked_polygons(section, targets[section]['buffer'])
-    print(len(analysis['shrinked_shplyPolys']))
+    # produce copies of the shrinked polygons optimized for querying
     analysis['optimized_shplyPolys'] = compute_optimized_polygons(analysis['shrinked_shplyPolys'])
-    print(len(analysis['optimized_shplyPolys']))
+    # produce holoviews-compatible copies of the shrinked polygons
     analysis['hvPolys'] = produce_hvPolygons(analysis['shrinked_shplyPolys'])
+    
+    print("len(analysis['shrinked_shplyPolys'])", len(analysis['shrinked_shplyPolys']))
+    print("len(analysis['optimized_shplyPolys'])", len(analysis['optimized_shplyPolys']))
+    
     analysis['distances_selected'] = distances_selected
     analysis['base_path'] = base_path
     analysis['replicates'] = replicates
@@ -160,20 +189,21 @@ def prepare_analysis(section, targets, distances_selected, base_path, replicates
     analysis['opt_polys_selected'] = []
     analysis['polys_selected'] = []
     analysis['hvPolys_selected'] = []
-    analysis['from_to'] = []
+    analysis['from_to_reversed'] = []
 
     prev_size = len(analysis['optimized_shplyPolys'])-1
-    for i in range(len(distances_selected)-2, -1, -1):
+    for i in range(len(distances_selected)-1, -1, -1):
         lo = distances_selected[i]
         hi = prev_size
         print(f'EVs within [{lo}-{hi})um from the epithelial tissue')
         prev_size = distances_selected[i]
-        analysis['from_to'].append([lo, hi])
+        analysis['from_to_reversed'].append([lo, hi])
         
         analysis['opt_polys_selected'].append(analysis['optimized_shplyPolys'][distances_selected[i]])
 
         analysis['polys_selected'].append(analysis['shrinked_shplyPolys'][distances_selected[i]])
         analysis['hvPolys_selected'].append(analysis['hvPolys'][distances_selected[i]])
+    analysis['from_to'] = list(reversed(analysis['from_to_reversed']))
     return analysis
 
 def load_evs(analysis_setup):
@@ -182,60 +212,69 @@ def load_evs(analysis_setup):
     analysis_setup['evs_d_useful'] = filter_oob_from_repeats(analysis_setup['optimized_shplyPolys'][0], analysis_setup['evs_d'])
     return analysis_setup
 
-def display_polygons_available():
-    p = './resources/analysis/'
+def display_rois_available(p = './resources/analysis/'):
     # find the files starting as 'user_polygons'
-    pt = Path(p)
+    rois_available = [f for f in Path(p).iterdir() if f.is_file() and
+                          f.name[:9] == 'user_rois']
 
-    polygons_available = []
-    for f in pt.iterdir():
-        if f.name[:13] == 'user_polygons':
-            polygons_available.append(f)
-
-    for pair in enumerate(polygons_available):
+    print('ROIs available in',p)
+    for pair in enumerate(rois_available):
         print(pair[0], '-', pair[1].name)
     
-    return polygons_available
+    return rois_available
 
-def select_and_load_polygons_specified(polygons_to_load, polygons_available):
-    with open(polygons_available[polygons_to_load], 'rb') as polygons_file:
-        user_polys_loaded = pickle.load(polygons_file)
-        user_polys = copy.copy(user_polys_loaded)
-    print('Polygons loaded from:', polygons_available[polygons_to_load].name)
+def display_experiments_available(p =  './resources/analysis/output/'):
+    exp_available = [f for f in Path(p).iterdir() if f.is_dir()]
     
-    return user_polys_loaded, user_polys
+    print('Experiments available in', p)
+    for pair in enumerate(exp_available):
+        print(pair[0], '-', pair[1].name)
+    
+    return exp_available
 
-def concatenate_polygons_list(hvPolys_selected, n_selected):
-    if n_selected == 2:
-        hvPolys_selected_list = hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 3:
-        hvPolys_selected_list = hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 4:
-        hvPolys_selected_list = hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 5:
-        hvPolys_selected_list = hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 6:
-        hvPolys_selected_list = hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 7:
-        hvPolys_selected_list = hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 8:
-        hvPolys_selected_list = hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 9:
-        hvPolys_selected_list = hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 10:
-        hvPolys_selected_list = hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 11:
-        hvPolys_selected_list = hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 12:
-        hvPolys_selected_list = hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 13:
-        hvPolys_selected_list = hvPolys_selected[12] * hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    elif n_selected == 14:
-        hvPolys_selected_list = hvPolys_selected[13] * hvPolys_selected[12] * hvPolys_selected[11] * hvPolys_selected[10] * hvPolys_selected[9] * hvPolys_selected[8] * hvPolys_selected[7] * hvPolys_selected[6] * hvPolys_selected[5] * hvPolys_selected[4] * hvPolys_selected[3] * hvPolys_selected[2] * hvPolys_selected[1] * hvPolys_selected[0]
-    return hvPolys_selected_list
+def load_rois_from_file(rois_input_file):
+    print('loading ROIs from:', rois_input_file.name)
+    with open(rois_input_file, 'rb') as rois_file:
+        user_rois_loaded = pickle.load(rois_file)
+        user_rois = copy.copy(user_rois_loaded)
+    prep_polys = []
+    for coords in user_rois:
+        p = Polygon(coords)
+        prep_polys.append(prep(p))
+    print('ROIs Loaded')
+    
+    return user_rois_loaded, user_rois, prep_polys
 
-def display_polygons_loaded(user_polys, hvPolys_selected, section_name):
-    upolys = hv.Polygons(user_polys if user_polys else [])
+def load_data_from_compressed_file(compressed_file):
+    with bz2.BZ2File(compressed_file, 'rb') as compressed_input_file:
+        data = pickle.load(compressed_input_file)
+    return data
+
+def load_experiment_counts_from_dir(experiment_counts_dir, file_names = ['evs_in_roi_replicate_objects', 'evs_in_roi_size_replicate_counts',
+        'evs_in_roi_size_replicate', 'evs_in_roi_distance_size_replicate_counts', 
+        'evs_in_roi_distance_size_replicate']):
+    """
+    try to load the pre computed counts from the files in the provided
+    The dir must contain the filenames provided.
+    The defaults are:
+    - evs_in_roi_replicate_objects.pickle.bz2
+    - evs_in_roi_size_replicate_counts.pickle.bz2
+    - evs_in_roi_size_replicate.pickle.bz2
+    - evs_in_roi_distance_size_replicate_counts.pickle.bz2
+    - evs_in_roi_distance_size_replicate.pickle.bz2
+    (These were defined for V2 of the analsysis)
+    """
+    
+    all_data = []
+    for file_name in file_names:
+        target = f'{experiment_counts_dir}/{file_name}.pickle.bz2'
+        loaded_data = load_data_from_compressed_file(target)
+        print(f'{file_name} loaded from {target}. Contains:',len(loaded_data),'elements')
+        all_data.append(loaded_data)
+    return all_data
+
+def display_rois_loaded(user_rois, hvPolys_selected, section_name, export_svg=False, png_size=600):
+    upolys = hv.Polygons(user_rois if user_rois else [], label='ROIs')
 
     # http://holoviews.org/getting_started/Gridded_Datasets.html
     centroids = [Polygon([pair for pair in zip(p['x'],p['y'])]).centroid.coords[:] for p in upolys.data]
@@ -243,158 +282,202 @@ def display_polygons_loaded(user_polys, hvPolys_selected, section_name):
     # https://holoviews.org/reference/elements/bokeh/Labels.html
     labels = hv.Labels([(cent[0][0],cent[0][1],i+1) for i, cent in enumerate(centroids)])
 
-    poly_streams = streams.PolyDraw(source=upolys, drag=True)
+    poly_streams = streams.PolyDraw(source=upolys, drag=True, shared=True)
+    poly_edit = streams.PolyEdit(source=upolys, vertex_style={'color': 'red'}, shared=True)
 
-    n_selected = len(hvPolys_selected) 
-    hvPolys_selected_list = concatenate_polygons_list(hvPolys_selected, n_selected)
+    hvPolys_selected_list = hv.Overlay([p for p in reversed(hvPolys_selected)], label='Cross-section')
 
     # produce a HoloViews layout with all the elements
-    all_elements = hvPolys_selected_list * upolys.opts(fill_alpha=0.5, active_tools=['poly_draw']) * labels
+    all_elements = hvPolys_selected_list * upolys.opts(fill_alpha=0.5, active_tools=['poly_edit']) * labels
 
     # save the plot as svg and png
-    hv.save(all_elements, f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.png', fmt='png')
+    hv.save(all_elements, f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.png', fmt='png', size=png_size)
         
     # exporting directly from bokeh works but has the following dependencies plus prior to launching the jupyter-lab executing in the terminal: export OPENSSL_CONF=/etc/ssl/
     #!conda install -c bokeh selenium -y
     #!conda install selenium pillow -y
     #!npm install -g phantomjs-prebuilt
-    #
-    render =  hv.render(all_elements, backend='bokeh')
-    render.output_backend = "svg"
-    export_svgs(render, filename=f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.svg')
+    if export_svg:
+        render =  hv.render(all_elements, backend='bokeh')
+        render.output_backend = "svg"
+        export_svgs(render, filename=f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.svg')
         
     return all_elements, poly_streams
 
 # stats and plots
-def save_polygons_for_reuse(poly_streams, user_polys_loaded, section):
-    # fetch the user-created polygons and prepare their coordinates for future use
-    user_polys = []
+def save_rois_for_reuse(poly_streams, user_rois_loaded, section):
+    # fetch the user-created rois and prepare their coordinates for future use
+    user_rois = []
     for i in range((len(poly_streams.data['xs']))):
         if len(poly_streams.data['xs'][i]) > 3:
-            user_polys.append([pair for pair in zip(poly_streams.data['xs'][i], poly_streams.data['ys'][i])])
+            user_rois.append([pair for pair in zip(poly_streams.data['xs'][i], poly_streams.data['ys'][i])])
 
-    # Create prepared versions of the user-provided polygons for querying
-    n_polys = len(user_polys)
+    # Create prepared versions of the user-provided rois for querying
+    n_polys = len(user_rois)
     if n_polys == 1:
-        user_polys = list(user_polys)
+        user_rois = list(user_rois)
     # polys = []
     prep_polys = []
-    for coords in user_polys:
+    for coords in user_rois:
         p = Polygon(coords)
         #polys.append(p)
         prep_polys.append(prep(p))
 
-    # export the user-selected polygons if needed
-    if user_polys_loaded == user_polys:
-        print('The polygons did not change')
+    # export the user-selected rois if needed
+    if user_rois_loaded == user_rois:
+        print('The ROIs did not change')
     else:
-        print('The polygons changed, saving to a new file now...')
+        print('The ROIs changed, saving to a new file now...')
         dt = datetime.now()
-        user_polys_file = f"./resources/analysis/user_polygons_{section}_{dt.strftime('%Y-%m-%d_%H-%M-%S')}.pickle"
-        with open(user_polys_file, 'wb') as polys_file:
-            pickle.dump(user_polys, polys_file)
-        user_polys_loaded = copy.copy(user_polys)
+        user_rois_file = f"./resources/analysis/user_rois_{section}_{dt.strftime('%Y-%m-%d_%H-%M-%S')}.pickle"
+        with open(user_rois_file, 'wb') as polys_file:
+            pickle.dump(user_rois, polys_file)
+        user_rois_loaded = copy.copy(user_rois)
 
-        print(len(user_polys),'user-created polygons are ready for querying. Their coordinates were saved to:', user_polys_file)
+        print(len(user_rois),'user-created ROIs are ready for querying. Their coordinates were saved to:', user_rois_file)
     
-    return user_polys, prep_polys, user_polys_loaded
+    return user_rois, prep_polys, user_rois_loaded
 
-def identify_evs_per_polygon(prep_polys, evs_in_replicates, sizes, distance_polygons=None):
+def identify_evs_per_roi(prep_polys, evs_in_replicates, sizes, distance_polygons=None):
     """
-    Identifies which of the evs are lying within the user-provided polygons
+    Identifies which of the evs are lying within the user-pcreated ROIs
     Returns:
-    a list of the EVs in each polygon (per replicate)
-    a list of frequencies of the ev-size per polygon per replicate
+    evs_in_roi_replicate - a list of the EVs in each polygon per replicate
+    evs_in_roi_size_replicate_counts - a list of frequencies of the ev-size per polygon per replicate
+    evs_in_roi_size_replicate - a list of tuples (roi, size, replicate, radius_um, age)
+    (optional)
+    evs_in_roi_distance_size_replicate_counts - a list of frequencies of the ev-size per polygon at distance per replicate
+    evs_in_roi_distance_size_replicate - list of tuples (roi, distance, size, replicate, radius_um, age)
     """
-    # then, the prepared polygons should be used to produce the statistical information needed
+    # the prepared polygons should be used to produce the statistical information needed
     n_sizes = len(sizes)
     n_polys = len(prep_polys)
     n_replicates = len(evs_in_replicates)
-
-    if 'distance_polygons' in locals():
-        print('received', len(distance_polygons), 'distance polygons and',len(prep_polys),'prepared polygons')
+    if distance_polygons:
+        n_distance_polys = len(distance_polygons)
+        print('received', n_distance_polys, 'distance polygons and', n_polys,'prepared polygons')
+    else:
+        print('No distance_polygons received')
 
     # list used for displaying the EVs using holoviews
-    # has the format: evs_per_replicate_in_polygon[replicate][polygon] = [evs in polygon]
-    evs_per_replicate_in_polygon = [[list() for p in range(len(prep_polys))] for i in range(n_replicates)]
+    # has the format: evs_per_replicate_in_roi[replicate][roi] = [evs in roi]
+    evs_in_roi_replicate_objects = [[list() for p in range(n_replicates)] for i in range(n_polys)]
 
     # list used for generating the statistical data required
-    evs_in_polygon_per_size = np.zeros([len(prep_polys), n_sizes, n_replicates]) # polygons, sizes, replicates
-    # polygons, distance polygons, sizes, replicates
-    evs_at_distance_in_polygons_per_size = np.zeros([len(prep_polys), len(distance_polygons), n_sizes, n_replicates])
+    evs_in_roi_size_replicate_counts = np.zeros([n_polys, n_sizes, n_replicates]) #roi, size, replicate
+    # roi, distance, size, replicate
+    if distance_polygons:
+        evs_in_roi_distance_size_replicate_counts = np.zeros([n_polys, n_distance_polys, n_sizes, n_replicates])
+
+    evs_in_roi_size_replicate = [] # holds tuples (roi, size, replicate, radius_um, age)
+    evs_in_roi_distance_size_replicate = [] # holds tuples (roi, distance, size, replicate, radius_um, age)
 
     # this same loop can produce the counts needed for stats purposes
     print('There are',n_replicates,'replicates,', n_polys, 'polygons')
-    for r in range(n_replicates):
-        print('Processing replicate',r,':', end='')
+    for repl_id in range(n_replicates):
+        print('Processing replicate:',repl_id,', total EVs to check:', len(evs_in_replicates[repl_id]))
         # check the evs per replicate against this polygon
-        for p in range(n_polys):
-            print(' poly', p, 'checking', len(evs_in_replicates[r]),'evs,', end='')
-            for ev in evs_in_replicates[r]:
+        already_allocated = 0
+        evs_ids_in_rois_this_replicate = []
+        for roi_id in range(n_polys):
+            for ev in evs_in_replicates[repl_id]:
                 point = Point(ev['x'], ev['y'])
-                if prep_polys[p].contains(point):
-                    evs_per_replicate_in_polygon[r][p].append(copy.deepcopy(ev))
+                if ev['id'] in evs_ids_in_rois_this_replicate:
+                    # prevent evs already allocated to a ROI from doing unnecessary checks
+                    continue
+                elif prep_polys[roi_id].contains(point):
+                    evs_ids_in_rois_this_replicate.append(ev['id'])
+                    evs_in_roi_replicate_objects[roi_id][repl_id].append(copy.deepcopy(ev))
 
                     # if distance-polygons are provided, check them here
                     # bear in mind, the distance polygons are inverted from farthest to nearest to the boundaries
-                    # this is to prevent the EVs from being detected at more than 1 distance
+                    # to prevent the EVs from being detected at more than 1 distance
                     if distance_polygons:
-                        for dp in range(len(distance_polygons)):
+                        distance_polygon = None
+                        for dp in range(n_distance_polys):
+                            #print(distance_polygons[dp])
                             if distance_polygons[dp].contains(point):
-                                distance_polygon = dp
+                                # store the non-inverted index of the distance to simplify the following processing steps
+                                distance_polygon = (n_distance_polys -1 ) - dp
                                 break
 
                     # identify the size range for the ev
                     for s in range(n_sizes):
                         if ev['radius_um'] < sizes[s]:
-                            evs_in_polygon_per_size[p, s, r] += 1
-
-                            if distance_polygons:
+                            evs_in_roi_size_replicate_counts[roi_id, s, repl_id] += 1
+                            evs_in_roi_size_replicate.append( (roi_id, s, repl_id, ev['radius_um'], ev['age']) )
+                            # In some edge cases, when the EV is still being secreted its position will be outside the boundaries
+                            # Therefore, the corresponding distance_polygon is not identified so we just skip this EV
+                            if distance_polygons and distance_polygon:
                                 # evs_in_distance_per_polygon_per_size
-                                evs_at_distance_in_polygons_per_size[p, distance_polygon, s, r] += 1
+                                evs_in_roi_distance_size_replicate_counts[roi_id, distance_polygon, s, repl_id] += 1
+                                evs_in_roi_distance_size_replicate.append( (roi_id, distance_polygon, s, repl_id, ev['radius_um'], ev['age']) )
                             break
-        print()
+            # how many EVS were allocated to this ROI?
+            print(f'{roi_id}:{len(evs_ids_in_rois_this_replicate) - already_allocated}', end=', ')
+            already_allocated = len(evs_ids_in_rois_this_replicate)
+        print('Total EVs in ROIs in this replicate:', len(evs_ids_in_rois_this_replicate))
     if distance_polygons:
-        return evs_per_replicate_in_polygon, evs_in_polygon_per_size, evs_at_distance_in_polygons_per_size
+        return evs_in_roi_replicate_objects, evs_in_roi_size_replicate_counts, evs_in_roi_size_replicate, evs_in_roi_distance_size_replicate_counts, evs_in_roi_distance_size_replicate
     else:
-        return evs_per_replicate_in_polygon, evs_in_polygon_per_size
+        return evs_in_roi_replicate_objects, evs_in_roi_size_replicate_counts, evs_in_roi_size_replicate
 
-def compute_basic_stats_per_polygon(evs_in_polygon_per_size):
+def compute_basic_stats_per_roi(evs_in_roi_size_replicate_counts, evs_in_roi_replicate_objects):
     counts = {}
-    max_freq = 0
-    for p in range(len(evs_in_polygon_per_size)):
-        for s in range(len(evs_in_polygon_per_size[0])):
+    normalized_counts = {}
+    max_freq, norm_max_freq = 0, 0
+    for roi_id in range(len(evs_in_roi_size_replicate_counts)):
+        for size_id in range(len(evs_in_roi_size_replicate_counts[0])):
             numbers = []
-            for r in range(len(evs_in_polygon_per_size[0][0])):    
-                numbers.append(evs_in_polygon_per_size[p, s, r])
-            if p not in counts:
-                counts[p] = dict()
-
+            normalized_numbers = []
+            for replicate_id in range(len(evs_in_roi_size_replicate_counts[0][0])):
+                n = evs_in_roi_size_replicate_counts[roi_id, size_id, replicate_id]
+                numbers.append(n)
+                denominator = len(evs_in_roi_replicate_objects[roi_id][replicate_id])
+                normalized_numbers.append( n / denominator if denominator > 0 else 0)
+            if roi_id not in counts:
+                counts[roi_id] = dict()
+                normalized_counts[roi_id] = dict()
             if max_freq < max(numbers):
                 max_freq = max(numbers)
-            counts[p][s] = {'counts':numbers, 'mean':np.mean(numbers), 'std':np.std(numbers)}
-    return counts, max_freq
+            if norm_max_freq < max(normalized_numbers):
+                norm_max_freq = max(normalized_numbers)
+            counts[roi_id][size_id] = {'counts':numbers, 'mean':np.mean(numbers), 'std':np.std(numbers)}
+            normalized_counts[roi_id][size_id] = {'counts':normalized_numbers, 'mean':np.mean(normalized_numbers), 'std':np.std(normalized_numbers)}
+    return counts, max_freq, normalized_counts, norm_max_freq
 
-def compute_stats_per_distance_per_polygon(evs_at_distance_in_polygon_per_size):
+def compute_stats_per_distance_per_roi(evs_in_roi_distance_size_replicate_counts, evs_in_roi_replicate_objects):
+    """
+    normalized_numbers - the values normalized per ROI
+    """
     counts = {}
-    max_freq = 0
-    for p in range(len(evs_at_distance_in_polygon_per_size)): # user polygons
-        for d in range(len(evs_at_distance_in_polygon_per_size[0])):
-            for s in range(len(evs_at_distance_in_polygon_per_size[0][0])):
+    normalized_counts = {}
+    max_freq, norm_max_freq = 0, 0
+    for roi_id in range(len(evs_in_roi_distance_size_replicate_counts)):
+        for distance_id in range(len(evs_in_roi_distance_size_replicate_counts[0])):
+            for size_id in range(len(evs_in_roi_distance_size_replicate_counts[0][0])):
                 numbers = []
-                for r in range(len(evs_at_distance_in_polygon_per_size[0][0][0])):    
-                    numbers.append(evs_at_distance_in_polygon_per_size[p, d, s, r])
-                if p not in counts:
-                    counts[p] = dict()
-                if d not in counts[p]:
-                    counts[p][d] = dict()
+                normalized_numbers = []
+                for replicate_id in range(len(evs_in_roi_distance_size_replicate_counts[0][0][0])):
+                    n = evs_in_roi_distance_size_replicate_counts[roi_id, distance_id, size_id, replicate_id]
+                    numbers.append(n)
+                    normalized_numbers.append( n / len(evs_in_roi_replicate_objects[roi_id][replicate_id]))
+                if roi_id not in counts:
+                    counts[roi_id] = dict()
+                    normalized_counts[roi_id] = dict()
+                if distance_id not in counts[roi_id]:
+                    counts[roi_id][distance_id] = dict()
+                    normalized_counts[roi_id][distance_id] = dict()
 
                 if max_freq < max(numbers):
                     max_freq = max(numbers)
-                counts[p][d][s] = {'counts':numbers, 'mean':np.mean(numbers), 'std':np.std(numbers)}
-    return counts, max_freq
+                if norm_max_freq < max(normalized_numbers):
+                    norm_max_freq = max(normalized_numbers)
+                counts[roi_id][distance_id][size_id] = {'counts':numbers, 'mean':np.mean(numbers), 'std':np.std(numbers)}
+                normalized_counts[roi_id][distance_id][size_id] = {'counts':normalized_numbers, 'mean':np.mean(normalized_numbers), 'std':np.std(normalized_numbers)}
+    return counts, max_freq, normalized_counts, norm_max_freq
 
-def produce_size_distribution_histograms_per_polygon(counts, sizes, edges, max_freq, columns=2, section_name=None, return_histograms=False):
+def produce_size_distribution_histograms_per_roi(counts, sizes, edges, max_freq, columns=2, section_name=None, return_histograms=False):
     freqs = {}
     errors = {}
     histograms = []
@@ -450,7 +533,7 @@ def produce_size_distribution_histograms_per_polygon(counts, sizes, edges, max_f
     else:
         return None
 
-def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, edges, max_freq, from_to, columns=2, section_name=None, return_histograms=False):
+def produce_size_distribution_histograms_per_roi_at_distance(counts, sizes, edges, max_freq, from_to, columns=2, section_name=None, return_histograms=False):
     freqs = {}
     errors = {}
     histograms = []
@@ -459,18 +542,17 @@ def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, 
     for p in range(len(counts)):
         # distance
         for d in range(len(counts[p])):
-            inverted_d = (len(counts[p]) - 1) -d
             freqs = []
             errors = []
             means = []
             stds = []
             # sizes
-            for s in range(len(counts[p][inverted_d])):
-                freqs.append(counts[p][inverted_d][s]['mean'])
-                errors.append((sizes[s], counts[p][inverted_d][s]['mean'], counts[p][inverted_d][s]['std']))
+            for s in range(len(counts[p][d])):
+                freqs.append(counts[p][d][s]['mean'])
+                errors.append((sizes[s], counts[p][d][s]['mean'], counts[p][d][s]['std']))
                 # for creating the table to display values to the user
-                means.append(counts[p][inverted_d][s]['mean'])
-                stds.append(counts[p][inverted_d][s]['std'])
+                means.append(counts[p][d][s]['mean'])
+                stds.append(counts[p][d][s]['std'])
             freqs = np.array(freqs)
 
             # http://holoviews.org/user_guide/Tabular_Datasets.html
@@ -480,7 +562,7 @@ def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, 
 
             # http://holoviews.org/Reference_Manual/holoviews.element.html
             histo = hv.Histogram((edges, freqs)).opts(
-                    title=f"Ev size distribution, ROI #{p+1} within {from_to[inverted_d]}um", 
+                    title=f"Ev size distribution, ROI #{p+1} within {from_to[d]}um", 
                     xlabel='EV radius in um', 
                     ylabel='Frequency',
                     xticks= [(edges[e+1], size_ranges[e]) for e in range(len(edges)-1)],
@@ -490,7 +572,7 @@ def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, 
                 )
             
             hist_w_errors = (hv.ErrorBars(errors) * histo)
-            hv.save(hist_w_errors, f'./resources/analysis/output/{section_name}_output_roi_{p+1}_within_{from_to[inverted_d]}um.png', fmt='png')
+            hv.save(hist_w_errors, f'./resources/analysis/output/{section_name}_output_roi_{p+1}_within_{from_to[d]}um.png', fmt='png')
         
             # exporting directly from bokeh works but depends on the following dependencies 
             # plus executing in the terminal: export OPENSSL_CONF=/etc/ssl/ prior to launching the jupyter-lab
@@ -500,10 +582,10 @@ def produce_size_distribution_histograms_per_polygon_at_distance(counts, sizes, 
             #
             render =  hv.render(hist_w_errors, backend='bokeh')
             render.output_backend = "svg"
-            export_svgs(render, filename=f'./resources/analysis/output/{section_name}_output_roi_{p+1}_within_{from_to[inverted_d]}um.svg')
+            export_svgs(render, filename=f'./resources/analysis/output/{section_name}_output_roi_{p+1}_within_{from_to[d]}um.svg')
 
             histograms.append(hist_w_errors + vtable.opts(
-                height=400, title=f'Histogram values, ROI #{p+1} within {from_to[inverted_d]}um')
+                height=400, title=f'Histogram values, ROI #{p+1} within {from_to[d]}um')
                 )
     if return_histograms:
         return hv.Layout(histograms).cols(columns)
