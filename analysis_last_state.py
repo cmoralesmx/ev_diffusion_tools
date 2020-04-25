@@ -267,7 +267,7 @@ def load_experiment_counts_from_dir(experiment_counts_dir, file_names = ['evs_in
     
     all_data = []
     for file_name in file_names:
-        target = f'{experiment_counts_dir}/{file_name}.pickle.bz2'
+        target = f'{experiment_counts_dir}//{file_name}.pickle.bz2'
         loaded_data = load_data_from_compressed_file(target)
         print(f'{file_name} loaded from {target}. Contains:',len(loaded_data),'elements')
         all_data.append(loaded_data)
@@ -291,7 +291,7 @@ def display_rois_loaded(user_rois, hvPolys_selected, section_name, export_svg=Fa
     all_elements = hvPolys_selected_list * upolys.opts(fill_alpha=0.5, active_tools=['poly_edit']) * labels
 
     # save the plot as svg and png
-    hv.save(all_elements, f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.png', fmt='png', size=png_size)
+    hv.save(all_elements, f'.//resources//analysis//output//{section_name}_cross_section_with_selected_distances_and_ROIs.png', fmt='png', size=png_size)
         
     # exporting directly from bokeh works but has the following dependencies plus prior to launching the jupyter-lab executing in the terminal: export OPENSSL_CONF=/etc/ssl/
     #!conda install -c bokeh selenium -y
@@ -300,7 +300,7 @@ def display_rois_loaded(user_rois, hvPolys_selected, section_name, export_svg=Fa
     if export_svg:
         render =  hv.render(all_elements, backend='bokeh')
         render.output_backend = "svg"
-        export_svgs(render, filename=f'./resources/analysis/output/{section_name}_cross_section_with_selected_distances_and_ROIs.svg')
+        export_svgs(render, filename=f'.//resources//analysis//output//{section_name}_cross_section_with_selected_distances_and_ROIs.svg')
         
     return all_elements, poly_streams
 
@@ -336,7 +336,7 @@ def save_rois_for_reuse(poly_streams, user_rois_loaded, section):
 
         print(len(user_rois),'user-created ROIs are ready for querying. Their coordinates were saved to:', user_rois_file)
     
-    return user_rois, prep_polys, user_rois_loaded
+    return user_rois, prep_polys, user_rois_loaded       
 
 def identify_evs_per_roi(prep_polys, evs_in_replicates, sizes, distance_polygons=None):
     """
