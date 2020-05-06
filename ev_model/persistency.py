@@ -209,12 +209,16 @@ def parse_ev_agents(filename):
     def parse_ev_agent_callback(_, element):
         if 'name' in element and element['name'] == 'EV':
             # add this EV to the collection
+            becameAt = [s.strip() for s in element['becameAt'].split(',')]
+            #print(becameAt)
             evs.append({
                 'id': int(element['id']),
                 'x': float(element['x']),
                 'y': float(element['y']),
                 'radius_um': float(element['radius_um']),
-                'age': float(element['age'])
+                'age': float(element['age']),
+                'becameDefaultAt': int(becameAt[0]),
+                'becameDisabledAt': int(becameAt[1])
             })
         return True
 

@@ -173,13 +173,10 @@ def prepare_analysis(section, targets, distances_selected, base_path, replicates
     """
     analysis = dict()
     analysis['shrinked_shplyPolys'] = load_shrinked_polygons(section, targets[section]['buffer'])
-    # produce copies of the shrinked polygons optimized for querying
-    analysis['optimized_shplyPolys'] = compute_optimized_polygons(analysis['shrinked_shplyPolys'])
     # produce holoviews-compatible copies of the shrinked polygons
     analysis['hvPolys'] = produce_hvPolygons(analysis['shrinked_shplyPolys'])
     
     print("len(analysis['shrinked_shplyPolys'])", len(analysis['shrinked_shplyPolys']))
-    print("len(analysis['optimized_shplyPolys'])", len(analysis['optimized_shplyPolys']))
     
     analysis['distances_selected'] = distances_selected
     analysis['base_path'] = base_path
@@ -191,7 +188,7 @@ def prepare_analysis(section, targets, distances_selected, base_path, replicates
     analysis['hvPolys_selected'] = []
     analysis['from_to_reversed'] = []
 
-    prev_size = len(analysis['optimized_shplyPolys'])-1
+    prev_size = len(analysis['shrinked_shplyPolys'])-1
     for i in range(len(distances_selected)-1, -1, -1):
         lo = distances_selected[i]
         hi = prev_size
@@ -199,8 +196,6 @@ def prepare_analysis(section, targets, distances_selected, base_path, replicates
         prev_size = distances_selected[i]
         analysis['from_to_reversed'].append([lo, hi])
         
-        analysis['opt_polys_selected'].append(analysis['optimized_shplyPolys'][distances_selected[i]])
-
         analysis['polys_selected'].append(analysis['shrinked_shplyPolys'][distances_selected[i]])
         analysis['hvPolys_selected'].append(analysis['hvPolys'][distances_selected[i]])
     analysis['from_to'] = list(reversed(analysis['from_to_reversed']))
