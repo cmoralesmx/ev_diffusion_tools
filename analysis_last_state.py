@@ -54,55 +54,66 @@ def load_evs_from_xml(directory, file_name):
 
     return evs
 
-def load_experiment_data(base_path, replicates=None, target_iteration='2880000'):
+from multiprocessing import Process, Manager, Queue
+manager = Manager()
+q = manager.Queue()
+
+def load_experiment_data(base_path, replicates=1, target_iteration='2880000', streaming=False):
     """
     """
-    if replicates:
-        evs = []
-        print('Processing', replicates, 'replicates')
-        for i in range(1, replicates+1):
-            evs_d = load_experiment_replicate(base_path + 'r' + str(i) + '/', target_iteration)
-            evs.append(evs_d)
-    else:
-        print('Processing a single repeat')
-        if base_path[-1:] != '/':
-            base_path += '/'
-        evs_d = load_experiment_replicate(base_path, target_iteration)
+    evs = [0] * replicates
+    print('Processing', replicates, 'replicate' if replicates < 2 else 'replicates', 'using multiprocessing')
+    processes = []
+    for i in range(1, replicates + 1):
+        p = Process(target=load_experiment_replicate, args=(base_path, i, target_iteration, streaming))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()
+    
+    for p in processes:
+        row = q.get()
+        evs[row[0]] = row[1]
+        #evs_d = load_experiment_replicate(xml_file, streaming)
+        #evs.append(evs_d)
+
     print('Done loading data for', len(evs), 'replicates')
     return evs
 
-def load_experiment_replicate(base_path, target_iteration, debug=False):
+def load_experiment_replicate(base_path, replicate_no, target_iteration, streaming=False, debug=False):
     print('load_experiment_replicate() running')
-    if type(target_iteration) is not str:
-        target_iteration = str(target_iteration)
-    # target pickle
-    tp = base_path + target_iteration + '.xml' + '.pickle'
-    tp_file = Path(tp)
+    target_xml = f'{base_path}r{replicate_no}/{target_iteration}.xml'
+    print('target_xml:', target_xml)
+    tpickle = f'{base_path}r{replicate_no}/{target_iteration}.xml.pickle'
+    tp_file = Path(tpickle)
 
     if tp_file.exists() and not tp_file.is_dir():
         if debug:
             print('\tPickled dictionary files exist at')
-            print('\t',tp)
+            print('\t', tpickle)
         
         # load the pickled dictionaries
-        with bz2.BZ2File(tp, 'rb') as pickled_file:
+        with bz2.BZ2File(tpickle, 'rb') as pickled_file:
             evs = pickle.load(pickled_file)
             if debug:
-                print('Dictionary loaded from:', tp)
+                print('Dictionary loaded from:', tpickle)
         
-    else:
+    elif not tp_file.is_dir():
         # compute and save
-        print('No pickled dictionary files exist yet. Computing now, wait...')
-        evs = persistency.read_xml(base_path, target_iteration + '.xml', ev_only=True)
+        print('No pickled dictionary files exist yet. Computing now, wait...\n')
+        evs = persistency.read_xml(target_xml, ev_only=True, streaming=streaming)
         
         #pickle_file = bz2.BZ2File(tp, 'wb')
-        with bz2.BZ2File(tp, 'wb') as pickle_file:
+        with bz2.BZ2File(tpickle, 'wb') as pickle_file:
             pickle.dump(evs, pickle_file)
-            print('Dictionary saved to:',tp)
+            print('Dictionary saved to:', tpickle)
+    else:
+        print('Specified file is a DIR', tp_file)
     if debug:
-        print('Total evs loaded as dictionaries:',len(evs))
+        print('Total evs loaded as dictionaries:', len(evs))
     print('load_experiment_replicate() DONE')
-    return evs
+    q.put((replicate_no - 1, evs))
 
 def filter_oob_from_repeats(shape, all_evs_in_repeats, debug=False):
     if type(all_evs_in_repeats[0]) is not list:
@@ -204,10 +215,10 @@ def load_evs(analysis_setup):
     return analysis_setup
 
 def display_rois_available(p = './resources/analysis/'):
-    # find the files starting as 'user_polygons'
+    # find the files with names starting as 'user_rois'
     rois_available = [f for f in Path(p).iterdir() if f.is_file() and
                           f.name[:9] == 'user_rois']
-
+    rois_available = sorted(rois_available)
     print('ROIs available in',p)
     for pair in enumerate(rois_available):
         print(pair[0], '-', pair[1].name)
@@ -413,16 +424,16 @@ def identify_evs_per_roi(prep_polys, evs_in_replicates, sizes, distance_polygons
     else:
         return evs_in_roi_replicate_objects, evs_in_roi_size_replicate_counts, evs_in_roi_size_replicate
 
-def compute_basic_stats_per_roi(evs_in_roi_size_replicate_counts, evs_in_roi_replicate_objects):
+def compute_basic_stats_per_roi(evs_in_roi_replicate_counts, evs_in_roi_replicate_objects):
     counts = {}
     normalized_counts = {}
     max_freq, norm_max_freq = 0, 0
-    for roi_id in range(len(evs_in_roi_size_replicate_counts)):
-        for size_id in range(len(evs_in_roi_size_replicate_counts[0])):
+    for roi_id in range(len(evs_in_roi_replicate_counts)):
+        #for size_id in range(len(evs_in_roi_replicate_counts[0])):
             numbers = []
             normalized_numbers = []
-            for replicate_id in range(len(evs_in_roi_size_replicate_counts[0][0])):
-                n = evs_in_roi_size_replicate_counts[roi_id, size_id, replicate_id]
+            for replicate_id in range(len(evs_in_roi_replicate_counts[0][0])):
+                n = evs_in_roi_replicate_counts[roi_id, replicate_id]
                 numbers.append(n)
                 denominator = len(evs_in_roi_replicate_objects[roi_id][replicate_id])
                 normalized_numbers.append( n / denominator if denominator > 0 else 0)

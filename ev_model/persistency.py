@@ -209,7 +209,15 @@ def parse_ev_agents(filename):
     def parse_ev_agent_callback(_, element):
         if 'name' in element and element['name'] == 'EV':
             # add this EV to the collection
-            becameAt = [s.strip() for s in element['becameAt'].split(',')]
+            # v3.6+ have individual defaultAt, disabledAt, disabledReason
+            # older versions: becameAt[defaultAt, disabledAt, disabledReason]
+            defaultAt = disabledAt = disabledReason = None
+            if 'becameAt' in element:
+                [defaultAt, disabledAt, 
+                    disabledReason] = [s.strip() for s in element['becameAt'].split(',')]
+            elif 'defaultAt' in element:
+                defaultAt = element['defaultAt']
+                disabledAt = element['disabledAt']
             #print(becameAt)
             evs.append({
                 'id': int(element['id']),
@@ -217,27 +225,75 @@ def parse_ev_agents(filename):
                 'y': float(element['y']),
                 'radius_um': float(element['radius_um']),
                 'age': float(element['age']),
-                'becameDefaultAt': int(becameAt[0]),
-                'becameDisabledAt': int(becameAt[1])
+                'defaultAt': int(defaultAt),
+                'disabledAt': int(disabledAt)
             })
         return True
 
+    print('Reading XML file in batches')
     with open(filename, 'rb') as xmlinput:
         xmltodict.parse(xmlinput, item_depth=2, item_callback=parse_ev_agent_callback)
 
-    #print('Agents not parsed due to errors:',problems_count)
     return evs
 
-def read_xml(p, xml_file, ev_only=False):
+def parse_ev_agents_whole_file(filename):
+    """
+    evs contains a list of dictionary-based representations of the EVs as parsed from the XML
+    """
+    import xmltodict
+
+    not_evs, evs = [], []
+    print('Loading whole XML to memory')
+    with open(filename, 'rb') as xmlinput:
+        xd = xmltodict.parse(xmlinput.read())
+    
+    # remove 'environment' from xf['states']
+    del(xd['states']['environment'])
+
+    # remove not evs
+    n = len(xd['states']['xagent'])
+    for i in range(n):
+        if xd['states']['xagent'][i]['name'] != 'EV':
+            not_evs.append(i)
+    for i in reversed(sorted(not_evs)):
+        del xd['states']['xagent'][i]
+    
+    # 
+    while(len(xd['states']['xagent']) > 1):
+        o = xd['states']['xagent'].pop()
+        defaultAt = disabledAt = disabledReason = None
+
+        if 'becameAt' in o:
+            [defaultAt, disabledAt, 
+                disabledReason] = [s.strip() for s in o['becameAt'].split(',')]
+        elif 'defaultAt' in o:
+            defaultAt = o['defaultAt']
+            disabledAt = o['disabledAt']
+        evs.append({
+                'id': int(o['id']),
+                'x': float(o['x']),
+                'y': float(o['y']),
+                'radius_um': float(o['radius_um']),
+                'age': float(o['age']),
+                'defaultAt': int(defaultAt),
+                'disabledAt': int(disabledAt)
+            })
+    evs.reverse()
+    return evs
+
+def read_xml(filename, ev_only=False, streaming=False):
     """
     if ev_only is enabled, returns a list of dictionaries and a list of objects
     both representing the EVs as parsed from XML plus another list which
     contains the evs producing errors while parsing
     """
-    filename = path.join(p, xml_file)
+    #filename = path.join(p, xml_file)
 
     if ev_only:
-        evs = parse_ev_agents(filename)
+        if streaming:
+            evs = parse_ev_agents(filename)
+        else:
+            evs = parse_ev_agents_whole_file(filename)
         return evs
     else:
         with open(filename,'r') as f:

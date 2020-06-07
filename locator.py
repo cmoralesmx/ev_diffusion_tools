@@ -42,7 +42,6 @@ def compute_areas_and_evs_per_cross_section(section, analysis_setup, user_rois):
             evs_per_replicate = []
             for rep_idx in range(len(analysis_setup['evs_in_roi_replicate_objects'][0])):
                 
-                #print(\"len(analysis_setup['evs_per_replicate_in_roi'][rep_idx])\ len(analysis_setup['evs_per_replicate_in_roi'][rep_idx]))
                 evs_per_replicate.append(len(analysis_setup['evs_in_roi_replicate_objects'][user_rois_idx][rep_idx]))
             # collect the total EVs per replicate in ROI
             evs_per_roi_counts.append(evs_per_replicate)
@@ -60,8 +59,7 @@ def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
     not_valid = []
     ppol = prep(poly_coords)
     for i in range(len(evs_in_replicate)):
-        #print(evs_in_replicate[i]['becameDefaultAt'], evs_in_replicate[i]['becameDefaultAt'] > 0, evs_in_replicate[i]['becameDisabledAt'], evs_in_replicate[i]['becameDisabledAt'] < 1)
-        if evs_in_replicate[i]['becameDefaultAt'] > 0 and evs_in_replicate[i]['becameDisabledAt'] < 1:
+        if evs_in_replicate[i]['defaultAt'] > 0 and evs_in_replicate[i]['disabledAt'] < 1:
             p = Point(evs_in_replicate[i]['x'], evs_in_replicate[i]['y'])
             
             if not ppol.contains(p):
@@ -70,28 +68,22 @@ def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
             not_valid.append(i)
     q.put((replicate_id, not_valid))
 
-def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords, size_ranges):
+def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
     """
     Finds what EVs are inside a given ROI in a specific replicate
     """
     from shapely.geometry import Polygon, Point
     from shapely.prepared import prep
 
-    n_sizes = len(size_ranges)
+    #n_sizes = len(size_ranges)
     pol = Polygon(roi_coords)
     ppol = prep(pol)
     evs_here = []
     #print(f'rep {rep_id}, roi {roi_id}')
     for ev in evs_in_replicate:
         p = Point(ev['x'], ev['y'])
-        size_id = None
         if ppol.contains(p):
-            # identify the size range for the ev
-            for s in range(n_sizes):
-                if ev['radius_um'] < size_ranges[s]:
-                    size_id = s
-                    break
-            evs_here.append((size_id, ev))
+            evs_here.append(ev)
     q.put((roi_id, rep_id, evs_here))
 
 def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
@@ -122,23 +114,25 @@ def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
     print(f'Total EVs processed: {total_i}, non-valid: {total_non_valid} ({(100 / total_i) * total_non_valid:.3f}%)')
     return evs_in_replicates
 
-def identify_evs_per_roi_multiprocess(polys, evs_in_replicates, sizes):
-    n_sizes = len(sizes)
+def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
     n_polys = len(polys)
     n_replicates = len(evs_in_replicates)
     evs_in_roi_replicate_objects = [[list() for p in range(n_replicates)] 
                                             for i in range(n_polys)]
-    evs_in_roi_size_replicate_counts = np.zeros([n_polys, n_sizes, n_replicates])
-    evs_in_roi_size_replicate = list()
+    print('n_polys:',n_polys,'n_replicates:',n_replicates)
+    evs_in_roi_replicate_counts = np.zeros([n_polys, n_replicates])
+    print(evs_in_roi_replicate_counts.shape)
+    evs_in_roi_replicate_radius_age = list()
 
     #n_loops = n_polys//n_processors + n_polys % n_processors
     print('Will check',n_polys,'rois in',n_replicates,'replicates. \nProcessing, wait...')
     for rep_id in range(n_replicates):
+        print('Rep',rep_id, end='... ')
         processes = []
         # iterate the list of ROIs, each ROI is handled by 1 processor
         for roi_id in range(n_polys):
             p = Process(target=ev_in_roi_locator, args=(rep_id, roi_id, 
-                evs_in_replicates[rep_id], polys[roi_id], sizes))
+                evs_in_replicates[rep_id], polys[roi_id]))
             processes.append(p)
             p.start()
             
@@ -147,12 +141,14 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates, sizes):
 
         for p in processes:
             res = q.get()
-            for tup in res[2]:
-                evs_in_roi_replicate_objects[res[0]][res[1]].append(tup[1])
-                evs_in_roi_size_replicate_counts[res[0]][tup[0]][res[1]] += 1
-                evs_in_roi_size_replicate.append((res[0],tup[0], res[1], 
-                    tup[1]['radius_um'], tup[1]['age']))
-        #print()
+
+            for ev in res[2]:
+                evs_in_roi_replicate_objects[res[0]][res[1]].append(ev)
+                
+                evs_in_roi_replicate_counts[ res[0], res[1] ] += 1
+
+                evs_in_roi_replicate_radius_age.append((res[0], res[1], ev['radius_um'], ev['age']))
+        print('COMPLETED')
     print('Rep ROI Element')
     total_in_rois = 0
     for roi in range(len(evs_in_roi_replicate_objects)):
@@ -160,8 +156,7 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates, sizes):
             total_in_rois += len(evs_in_roi_replicate_objects[roi][rep])
             print(f'{rep:2d}   {roi:2d}   {len(evs_in_roi_replicate_objects[roi][rep]):4d}')
     print('Total EVs in ROIs:', total_in_rois)
-    return evs_in_roi_replicate_objects, evs_in_roi_size_replicate_counts, evs_in_roi_size_replicate
-
+    return evs_in_roi_replicate_objects, evs_in_roi_replicate_counts, evs_in_roi_replicate_radius_age
 
 targets = {}
 
@@ -170,8 +165,6 @@ targets['ia-junction'] = {'buffer':80}
 targets['utj'] = {'buffer':34}
 targets['isthmus'] = {'buffer':32}
 targets['ampulla'] = {'buffer':334}
-targets['edges'] = [v for v in np.arange(0.04, 0.17, 0.01)]
-targets['sizes'] = [v for v in np.arange(0.04, 0.17, 0.01)]
 
 sections = ['utj', 'isthmus', 'ia-junction', 'ampulla1', 'ampulla2']
 
@@ -185,14 +178,13 @@ classes2['ampulla'] = {'narrow_end':[1,2,3,4,5,6], 'wide_end':[7,8,9,10, 11, 12]
 # select which verion of the analysis to use
 classes = copy.deepcopy(classes2)
 
-def pickle_data_to_compressed_file(data, name, version):
-    with bz2.BZ2File(f'./resources/analysis/output/{version}_{name}.pickle.bz2', 'wb') as compressed_output_file:
+def pickle_data_to_compressed_file(data, name, version, iteration):
+    with bz2.BZ2File(f'./resources/analysis/output/{version}_{name}_{iteration}.pickle.bz2', 'wb') as compressed_output_file:
         pickle.dump(data, compressed_output_file)
-        print(f'data in {name} saved to ./resources/analysis/output/{version}_{name}.pickle.bz2')
-
+        print(f'data in {name} saved to ./resources/analysis/output/{version}_{name}_{iteration}.pickle.bz2')
 
 def main(section, base_path, iteration, replicates, load_rois, 
-        min_distance, max_distance, version):
+        min_distance, max_distance, version, streaming):
     distances_selected = [min_distance, max_distance]
     
     analysis_setup = als.prepare_analysis(section, targets, distances_selected, 
@@ -201,7 +193,7 @@ def main(section, base_path, iteration, replicates, load_rois,
 
     analysis_setup['evs_d'] = als.load_experiment_data(analysis_setup['base_path'], 
                                                         analysis_setup['replicates'], 
-                                    target_iteration=analysis_setup['target_iteration'])
+                                    target_iteration=analysis_setup['target_iteration'], streaming=streaming)
     base_polygon = als.produce_base_polygons(environment.load_polygons(section))
     analysis_setup['evs_d_useful'] = identify_valid_evs_multiprocess(
                                                 base_polygon,
@@ -213,15 +205,9 @@ def main(section, base_path, iteration, replicates, load_rois,
 
     # MULTIPROCESS
     [analysis_setup['evs_in_roi_replicate_objects'],
-     analysis_setup['evs_in_roi_size_replicate_counts'], 
-     analysis_setup['evs_in_roi_size_replicate']] = identify_evs_per_roi_multiprocess(
-         user_rois, analysis_setup['evs_d_useful'], targets['sizes'])
-    
-    # export the identified evs per polygon for later reuse
-    for fn in ['evs_in_roi_replicate_objects', 
-        'evs_in_roi_size_replicate_counts',
-        'evs_in_roi_size_replicate']:
-        pickle_data_to_compressed_file(analysis_setup[fn], fn, section+'_'+version)
+     analysis_setup['evs_in_roi_replicate_counts'], 
+     analysis_setup['evs_in_roi_replicate_radius_age']] = identify_evs_per_roi_multiprocess(
+         user_rois, analysis_setup['evs_d_useful'])
     
     stats = dict()
 
@@ -233,23 +219,29 @@ def main(section, base_path, iteration, replicates, load_rois,
 
     # total evs per cross section
     stats['total_evs_per_section'] = analysis_setup['evs_per_replicate']
-    stats['from_to'] = analysis_setup['from_to']
-    stats['from_to_reversed'] = analysis_setup['from_to_reversed']
+    stats['evs_in_roi_replicate_counts'] = analysis_setup['evs_in_roi_replicate_counts']
+    stats['evs_in_roi_replicate_radius_age'] = analysis_setup['evs_in_roi_replicate_radius_age']
+    
+    stats['evs_per_replicate'] = [(rep, ev['radius_um'], ev['age']) 
+            for rep in range(len(analysis_setup['evs_d_useful'])) for ev in analysis_setup['evs_d_useful'][rep]]
 
-    [stats['counts_per_roi'], stats['max_freq_per_roi'],
-    stats['normalized_counts_per_roi'], 
-    stats['normalized_max_freq_per_roi']] = als.compute_basic_stats_per_roi(analysis_setup['evs_in_roi_size_replicate_counts'], 
-                                                                                    analysis_setup['evs_in_roi_replicate_objects'])
     m_index = pd.MultiIndex.from_tuples(
-        [(section,) + t[:-2] for t in analysis_setup['evs_in_roi_size_replicate']],
-        names=['section', 'roi', 'size_range_id', 'replicate'])
-    stats['data_frame'] = pd.DataFrame([t[-2:] for t in analysis_setup['evs_in_roi_size_replicate']],
+        [(section, t[0]) for t in stats['evs_per_replicate']],
+        names=['section', 'replicate'])
+    stats['evs_per_replicate_df'] = pd.DataFrame([t[1:] for t in stats['evs_per_replicate']],
+                                index = m_index, columns=['radius_um', 'age'])
+    
+    m_index = pd.MultiIndex.from_tuples(
+        [(section,) + t[:-2] for t in analysis_setup['evs_in_roi_replicate_radius_age']],
+        names=['section', 'roi', 'replicate'])
+    stats['data_frame'] = pd.DataFrame([t[-2:] for t in analysis_setup['evs_in_roi_replicate_radius_age']],
                                 index=m_index, columns=['radius_um', 'age'])
 
     print(f'Cross section total evs: {np.mean(stats["total_evs_per_section"]):.2f}')
 
     # SAVE the stats for this section
-    sf = './resources/analysis/output/stats_'+section+'_'+version+'.pickle.bz2'
+    
+    sf = f'./resources/analysis/output/stats_{version}_{iteration}_{load_rois.name[5:14]}.pickle.bz2'
     with bz2.BZ2File(sf, 'wb') as stats_file:
         pickle.dump(stats, stats_file)
         print('stats saved to ', sf)
@@ -268,13 +260,14 @@ if __name__ ==  '__main__':
     parser.add_argument('-i', '--iteration', nargs='?', type=int, help='Iteration number to read. Default 14.4k')
     parser.add_argument('-r', '--replicates', nargs='?', type=int, help='The number of replicates to read')
     parser.add_argument('-p', '--polygons', nargs='?', type=int, help='Polygons to load for the ROIs')
+    #parser.add_argument('-s', action='store_true', help='The agents in the XML are read one by one. Enabling this allows processing XML files with file size larger than the available RAM')
     args = parser.parse_args()
 
     print('--'*10)
     rois_available = als.display_rois_available()
     print('--'*10)
-    experiments_available = als.display_experiments_available()
-    print('--'*10)
+    #experiments_available = als.display_experiments_available()
+    #print('--'*10)
 
     #if not args.iteration:
     i = args.iteration if args.iteration else 14400000
@@ -286,13 +279,13 @@ if __name__ ==  '__main__':
         rois = 2
         min_d, max_d = 160, 320
 
-    polys = rois_available[args.polygons] if args.polygons else rois_available[rois]
+    load_rois = rois_available[args.polygons] #if args.polygons else rois_available[rois]
     
     print('      path:', args.path)
     print('   section:', args.section)
     print('   version:', args.version)
     print(' iteration:', i)
     print('replicates:', r)
-    print('  polygons:', args.polygons if args.polygons else '---', 'from file:', polys)
+    print('   ROIS id:', args.polygons if args.polygons else '---', ', file:', load_rois)
     
-    main(args.section, args.path, i, r, polys, min_d, max_d, args.version)
+    main(args.section, args.path, i, r, load_rois, min_d, max_d, args.version, streaming=True)
