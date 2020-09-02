@@ -50,7 +50,7 @@ def load_evs_from_xml(directory, file_name):
     'dictionaries': a list of dictionaries represeinting the EVs
     'objects' a list of objects representing the EVs
     """
-    evs = persistency.read_xml(directory, file_name, ev_only=True)
+    evs = persistency.read_xml(Path.joinpath(directory, file_name), ev_only=True)
 
     return evs
 
@@ -58,7 +58,8 @@ from multiprocessing import Process, Manager, Queue
 manager = Manager()
 q = manager.Queue()
 
-def load_experiment_data(base_path, replicates=1, target_iteration='2880000', streaming=False):
+def load_experiment_data(base_path, replicates=1, target_iteration='2880000', 
+        streaming=False, force_overwrite=False):
     """
     """
     evs = [0] * replicates
@@ -81,14 +82,15 @@ def load_experiment_data(base_path, replicates=1, target_iteration='2880000', st
     print('Done loading data for', len(evs), 'replicates')
     return evs
 
-def load_experiment_replicate(base_path, replicate_no, target_iteration, streaming=False, debug=False):
+def load_experiment_replicate(base_path, replicate_no, target_iteration,
+    streaming=False, debug=False, force_overwrite=False):
     print('load_experiment_replicate() running')
     target_xml = f'{base_path}r{replicate_no}/{target_iteration}.xml'
     print('target_xml:', target_xml)
     tpickle = f'{base_path}r{replicate_no}/{target_iteration}.xml.pickle'
     tp_file = Path(tpickle)
 
-    if tp_file.exists() and not tp_file.is_dir():
+    if tp_file.exists() and not tp_file.is_dir() and not force_overwrite:
         if debug:
             print('\tPickled dictionary files exist at')
             print('\t', tpickle)

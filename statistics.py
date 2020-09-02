@@ -1,4 +1,5 @@
 import bz2
+import copy
 import pickle
 import numpy as np
 import scipy.stats as sp_stats
@@ -17,6 +18,23 @@ classes2['ampulla'] = {'narrow_end':[1,2,3,4,5,6],
                         'wide_end':[7,8,9,10, 11, 12],
                         'narrow_lumen':[13,14,15,16,17,18], 
                         'wide_lumen':[19, 20, 21, 22, 23, 24]}
+
+# deffinitions for v3 of the analysis
+# color palete from https://learnui.design/tools/data-color-picker.html#palette
+classes3 = {'ordering':[('narrow_end','#003f5c'), ('narrow_lumen','#444e86'),
+            ('lumen_centre','#955196'), ('wide_end','#ffa600'),
+            ('near_epithelium','#dd5182'), ('far_epithelium','#ff6e54')]}
+classes3['isthmus'] = {'narrow_end':[1,2,4,5,6,7], 'wide_end':[],
+                       'narrow_lumen':[9, 10, 11, 12, 13, 14],
+                       'lumen_centre':[17, 18],
+                       'near_epithelium':[1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14],
+                       'far_epithelium':[3, 8, 15, 16, 19, 20, 21]}
+classes3['ampulla'] = {'narrow_end':[1,2,3,4,5,6], 'wide_end':[7,8,9,10,11,12], 
+                       'narrow_lumen':[13,14,15,16,17,18],
+                       'lumen_centre':[19, 20, 21, 22, 23, 24],
+                       'near_epithelium':[32,33,34,35,36,37,38,39,40,41,42,43],
+                      'far_epithelium':[25,26,27,28,29,30,31]}
+
 
 def log_normality_test(data, log):
     """
@@ -104,53 +122,40 @@ def identify_testable_rois(dpr, lengths, log):
         min_n = min([len(d) for d in dpr])
     return min_n, dpr
 
-# single cross-section comparisons
-def differences_within_classes(log, data, section, replicates, pooled_repeats=False, alpha=0.05):
-    """
-    Compare the ROIs in a class with each other, i.e: All ROIs in the class
-    'narrow-end' are compared in a single comparison.
-    """
-    l = f"{'=='*20}'\nComparing ROIs within classes in {section} {'POOLING REPEATS' if pooled_repeats else ''}\n"
-    print(l)
-    print('H0: the samples were drawn from a population with the same distribution')
-    log.write(l)
-    log.write('H0: both samples/group of samples were drawn from a population with the same distribution\n')
+def frequencies_per_roi(data, bin_edges, rois, sec, n_rep, log):
+    freqs_per_roi, binned_freq_per_roi = [], []
+    binned_freq_per_roi_mean, binned_freq_per_roi_sd = [], []
+    for i in range(len(rois)):
+        freqs, binned_freqs, = [], []
+        for rep in range(n_rep):
+            d = data.query(f"section=='{sec}' & roi=={rois[i]} & replicate=={rep}")['radius_um']
+            # frequency per ROI in this repeat
+            freqs.append(len(d))
+            # binned frequency per ROI
+            bf, _ = np.histogram(d, bins=bin_edges)
+            binned_freqs.append(bf)
 
-    for class_name, _ in classes2['ordering']:       
-        rois_class1 = [roi for roi in classes2[section][class_name]]
-        log.write(f"{'=='*10}\n")
-        log.write(f'Rois in {class_name} {rois_class1}\n')
-        print(f"{'=='*10}\n")
-        print(f'ROIs: in {class_name} {rois_class1}\n')
-    
-        for rep in range(1 if pooled_repeats else replicates):
-            if not pooled_repeats:
-                print(f'-------- repeat: {rep + 1} --------')
-                log.write(f'-------- repeat: {rep + 1} --------\n')
-            
-            r = replicates if pooled_repeats else rep
-            dpr, lengths = select_data(data, rois_class1, section, r, pooled_repeats, log)
+        log.write(f'ROI #{rois[i]}, Total EV per repeat: {freqs}\n')
+        log.write(f'Total EV per size-range per repeat(binned_freqs) {binned_freqs}\n')
+        
+        freqs_per_roi.append(freqs)
+        binned_freq_per_roi.append(binned_freqs)
 
-            min_n, dpr = identify_testable_rois(dpr, lengths, log)
-            if min_n is None or dpr is None:
-                continue
-            
-            # one way t-test assumes homoscedasticity, we must check the samples have the same variance
-            parametric = validate_parametric(min_n, dpr, alpha, log)
+        npa = np.array(binned_freqs)
+        log.write(f'Mean EV per size-range: {npa.mean(axis=0)}\n')
+        binned_freq_per_roi_mean.append(npa.mean(axis=0))
+        binned_freq_per_roi_sd.append(npa.std(axis=0))
 
-            # do the test
-            test_group(dpr, alpha, parametric, log)
-
-def select_data(data, rois_class, sec, n_rep, pooled_repeats, log):
-    dpr, lengths = [], []
-    rp = f' in {[i for i in range(n_rep)]}' if pooled_repeats else f'=={n_rep}'
-    for i_roi in rois_class:
-        #rs = [i for i in range(n_rep)]
-        d = data.query(f"section=='{sec}' & roi=={i_roi-1} & replicate{rp}")['radius_um']
-        lengths.append((i_roi, len(d)))
-        log.write(f'roi {i_roi}, elements: {len(d)}\n')
-        dpr.append(d)
-    return dpr, lengths
+    log.write('Summary statistics for cross-section:\n')
+    freqs_per_roi_means = np.array(freqs_per_roi).mean(axis=1)
+    freqs_per_roi_sd = np.array(freqs_per_roi).std(axis=1)
+    freqs_per_roi_var = np.array(freqs_per_roi).var(axis=1)
+    log.write(f'Mean EV { freqs_per_roi_means }\n')
+    log.write(f'Std Dev { freqs_per_roi_sd }\n')
+    log.write(f'Varianc { freqs_per_roi_var }\n')
+    return [freqs_per_roi, freqs_per_roi_means, freqs_per_roi_sd, 
+        freqs_per_roi_var, binned_freq_per_roi, 
+        binned_freq_per_roi_mean, binned_freq_per_roi_sd]
 
 def test_groups(dpr1, dpr2, alpha, parametric, log):
     if parametric:
@@ -190,24 +195,84 @@ def test_group(dpr, alpha, parametric, log):
         log.write('SIGNIFICANT DIFFERENCES. Reject H0\n')
         # extra test should be carried to identify pairwise differences
 
-def process_repeat(data, rep, pooled_repeats, sec1, sec2, n_reps1, n_reps2, rois_class1, rois_class2, log, alpha):
-    r1 = n_reps1 if pooled_repeats else rep
-    r2 = n_reps2 if pooled_repeats else rep
-    dpr1, lengths1 = select_data(data, rois_class1, sec1, r1, pooled_repeats, log)
-    dpr2, lengths2 = select_data(data, rois_class2, sec2, r2, pooled_repeats, log)
-    # all the test must be done using both lists of data
-    min_n1, dpr1 = identify_testable_rois(dpr1, lengths1, log)
-    min_n2, dpr2 = identify_testable_rois(dpr2, lengths2, log)
-    
-    if min_n1 is None or min_n2 is None:
-        return None
+def export_csv(sections, versions, iter1, rois1, freqs_per_roi1, freqs_per_roi2, 
+                binned_freqs_per_roi1, binned_freqs_per_roi2, rois_per_class, apop,
+                differentiation):
+    s1, v1 = sections[0], versions[0]
+    s2, v2 = sections[1], versions[1]
 
-    # one way t-test assumes homoscedasticity, we must check the samples have the same variance
-    parametric = validate_double_parametric(min_n1, dpr1, min_n2, dpr2, alpha, log)
+    class_per_roi = []
+    drois = ['near_epithelium', 'far_epithelium']
+    # produce a list of tuples [(roi_id, class)]
+    for c, rois in rois_per_class.items():
+        for r in rois:
+            class_per_roi.append((r - 1, c))
     
-    dpr = dpr1 + dpr2
-    test_group(dpr, alpha, parametric, log)
-    test_groups(dpr1, dpr2, alpha, parametric, log)
+    f_rois_p = f'./resources/analysis/output/freqs_rois_{s1}_{v1}-{s2}_{v2}-{iter1}_rois_v{rois1}.csv'
+    #f_rois_reps_p = f'./resources/analysis/output/freqs_rois_reps_{s1}_{v1}-{s2}_{v2}-{iter1}_rois_v{rois1}.csv'
+
+    f_size_p = f'./resources/analysis/output/freqs_size_{s1}_{v1}-{s2}_{v2}-{iter1}_rois_v{rois1}.csv'
+    #f_size_reps_p = f'./resources/analysis/output/freqs_size_range_reps_{s1}_{v1}-{s2}_{v2}-{iter1}_rois_v{rois1}.csv'
+    if rois1 == '4.0':
+        f_distance_p = f'./resources/analysis/output/freqs_distance_{s1}_{v1}-{s2}_{v2}-{iter1}_rois_v{rois1}.csv'
+    else:
+        f_distance_p = "/dev/null"
+    
+    print('CSV freqs per ROI, saved as:')
+    print(f_rois_p)
+    print(f_size_p)
+    if rois1 == '4.0':
+        print(f_distance_p)
+
+    if iter1 == 14400000:
+        t = '4'
+    elif iter1 == 28800000:
+        t = '8'
+    else:
+        t = '10'
+    
+    sec = s1[:-1] if s1[-1:] == '1' else s1
+
+    # needs info about the roi IDs
+    with open(f_rois_p, 'w') as f_rois:
+        f_rois.write(f'section,stage,roi,roi_type,time,freq,apoptosis,differentiation\n')
+        n_rois = len(freqs_per_roi1)
+        for (freqs_per_roi, stage) in [(freqs_per_roi1, 'pre'), (freqs_per_roi2, 'post')]:
+            for roi_id in range(n_rois):
+                # fin the type of ROI
+                n_repeats = len(freqs_per_roi[roi_id])
+                for repeat_id in range(n_repeats):
+                    freq = freqs_per_roi[roi_id][repeat_id]
+                    f_rois.write(f'{sec},{stage},{class_per_roi[roi_id][0]},{class_per_roi[roi_id][1]},{t},{freq},{apop},{differentiation}\n')
+
+    with open(f_size_p, 'w') as f_size, open(f_distance_p, 'w') as f_distance:
+        #, open(f_size_reps_p, 'w') as f_size_reps:
+        f_size.write(f'section,stage,roi,roi_type,time,freq,apoptosis,differentiation,type\n')
+        if rois1 == '4.0':
+            f_distance.write(f'section,stage,roi,roi_type,time,freq,apoptosis,differentiation,type\n')
+
+        n_rois = len(freqs_per_roi1)
+        for (binned_freqs_per_roi, stage) in [(binned_freqs_per_roi1, 'pre'), (binned_freqs_per_roi2, 'post')]:
+            for roi_id in range(n_rois):
+                n_repeats = len(binned_freqs_per_roi[roi_id])
+                for repeat_id in range(n_repeats):
+                    mvs = 0
+                    for i_size in range(len(binned_freqs_per_roi[roi_id][repeat_id])):
+                        if i_size < 1:
+                            exo = binned_freqs_per_roi[roi_id][repeat_id][i_size]
+                            if class_per_roi[roi_id][1] in drois:
+                                f_distance.write(f'{sec},{stage},{class_per_roi[roi_id][0]},{class_per_roi[roi_id][1]},{t},{exo},{apop},{differentiation},exosomes\n')
+                            else:
+                                f_size.write(f'{sec},{stage},{class_per_roi[roi_id][0]},{class_per_roi[roi_id][1]},{t},{exo},{apop},{differentiation},exosomes\n')
+                        else:
+                            mvs += binned_freqs_per_roi[roi_id][repeat_id][i_size]
+                    # write the values for microvesicles
+                    if class_per_roi[roi_id][1] in drois:
+                        f_distance.write(f'{sec},{stage},{class_per_roi[roi_id][0]},{class_per_roi[roi_id][1]},{t},{mvs},{apop},{differentiation},microvesicles\n')
+                    else:
+                        f_size.write(f'{sec},{stage},{class_per_roi[roi_id][0]},{class_per_roi[roi_id][1]},{t},{mvs},{apop},{differentiation},microvesicles\n')
+                        
+
 
 def differences_across_classes(log, data, section, replicates, pooled_repeats=False, alpha=0.05):
     """
@@ -222,11 +287,11 @@ def differences_across_classes(log, data, section, replicates, pooled_repeats=Fa
     log.write(l)
     log.write('H0: the samples/group of samples were drawn from a population with the same distribution\n')
 
-    pairs_of_classes = [p for p in combinations([t[0] for t in classes2['ordering']], 2)]
+    pairs_of_classes = [p for p in combinations([t[0] for t in classes['ordering']], 2)]
 
     for roi_class_1, roi_class_2 in pairs_of_classes:
-        rois_class1 = [roi for roi in classes2[section][roi_class_1]]
-        rois_class2 = [roi for roi in classes2[section][roi_class_2]]
+        rois_class1 = [roi for roi in classes[section][roi_class_1]]
+        rois_class2 = [roi for roi in classes[section][roi_class_2]]
         print(f"{'=='*10}\n")
         print('Rois in', roi_class_1, rois_class1)
         print('Rois in', roi_class_2, rois_class2)
@@ -239,18 +304,19 @@ def differences_across_classes(log, data, section, replicates, pooled_repeats=Fa
                 print(f'------------ repeat {rep+1} ------------')
                 log.write(f'------------ repeat {rep+1} ------------\n')
             
-            process_repeat(data, rep, pooled_repeats, section, section, 
+            process_repeat(data, rep, section, section, 
                 replicates, replicates, rois_class1, rois_class2, log, alpha)
 
 # comparisons for two cross sections
-def differences_two_sections(log, data, sections, versions, replicates, paired_classes=True, pooled_repeats=False, alpha=0.05):
+def differences_two_sections(log, data, sections, versions, replicates, bin_edges, 
+                classes, paired_classes=True, alpha=0.05):
     """
     Compares the ROIs of a given class in the first section against 
     ROIs of non-matching classes in the second section.
+    This comparison is based on comparing the mean values after binning the EVs per size
     """
     mc = 'in MATCHING classes in' if paired_classes else 'in NON-matching classes in'
-    pr = 'POOLING REPEATS' if pooled_repeats else 'PER REPEAT'
-    l = f"{'=='*20}\nComparing ROIs {mc} {sections} {pr}\n"
+    l = f"{'=='*20}\nComparing ROIs {mc} {sections}\n"
     print(l)
     print('H0: both samples were drawn from a population with the same distribution')
     log.write(l)
@@ -258,66 +324,53 @@ def differences_two_sections(log, data, sections, versions, replicates, paired_c
     
     class_reference = ['','']
     if type(sections) != list:
-        sections = [sections, sections]
-        replicates = [replicates, replicates]
+        raise RuntimeError('sections is not a list!', type(sections))
     else:
+        # remove the added 1 and 2 numbers if needed
         log.write(f'Renaming sections {sections}\n')
         class_reference[0] = sections[0][:-1] if sections[0][-1] == '1' else sections[0]
         class_reference[1] = sections[1][:-1] if sections[1][-1] == '2' else sections[1]
         log.write(f'New names {class_reference}\n')
     if paired_classes:
-        pairs_of_classes = [(t[0], t[0]) for t in classes2['ordering']]
+        pairs_of_classes = [(t[0], t[0]) for t in classes['ordering']]
     else:
-        pairs_of_classes = [p for p in combinations([t[0] for t in classes2['ordering']], 2)]
+        pairs_of_classes = [p for p in combinations([t[0] for t in classes['ordering']], 2)]
 
-    for roi_class_1, roi_class_2 in pairs_of_classes:
-        rois_class1 = [roi for roi in classes2[class_reference[0]][roi_class_1]]
-        rois_class2 = [roi for roi in classes2[class_reference[1]][roi_class_2]]
-        log.write(f"{'=='*10}\n")
-        log.write(f'Rois in {sections[0]} {roi_class_1} {rois_class1}\n')
-        log.write(f'Rois in {sections[1]} {roi_class_2} {rois_class2}\n')
-        print(f'Rois in {sections[0]} {roi_class_1} {rois_class1}')
-        print(f'Rois in {sections[1]} {roi_class_2} {rois_class2}')
-        
-        for rep in range(1 if pooled_repeats else min(replicates)):
-            if not pooled_repeats:
-                print(f'------------ repeat {rep+1} ------------')
-                log.write(f'------------ repeat {rep+1} ------------\n')
+    log.write(f'pairs_of_classes: {pairs_of_classes}\n')
+    n_rois1, n_rois2 = 0, 0
+    # create a list of ROIs
+    rois_class1, rois_class2 = [], []
+    for class_1, class_2 in pairs_of_classes:
+        rois_class1 += [i_roi-1 for i_roi in classes[class_reference[0]][class_1]]
+        rois_class2 += [i_roi-1 for i_roi in classes[class_reference[1]][class_2]]
+        n_rois1 += len(rois_class1)
+        n_rois2 += len(rois_class2)
+    log.write(f'rois_class1: {rois_class1}\n')
+    log.write(f'rois_class2: {rois_class2}\n')
 
-            process_repeat(data, rep, pooled_repeats, sections[0], sections[1],
-                replicates[0], replicates[1], rois_class1, rois_class2, log, alpha)
+    log.write('=== Frequencies for section 1\n')
+    [freqs_per_roi1, freqs_per_roi_means1, freqs_per_roi_sd1, 
+        freqs_per_roi_var1, binned_freq_per_roi1, 
+        binned_freq_per_roi_mean1, 
+        binned_freq_per_roi_sd1] = frequencies_per_roi(data, bin_edges, rois_class1, 
+                                                    sections[0], replicates[0], log)
+    log.write('=== Frequencies for section 2\n')
+    [freqs_per_roi2, freqs_per_roi_means2, freqs_per_roi_sd2, 
+        freqs_per_roi_var2, binned_freq_per_roi2, 
+        binned_freq_per_roi_mean2, 
+        binned_freq_per_roi_sd2] = frequencies_per_roi(data, bin_edges, rois_class2,
+                                                    sections[1], replicates[1], log)
+    
+    max_y = (max(np.max(freqs_per_roi_means1), np.max(freqs_per_roi_means2)) + 
+            max(np.max(freqs_per_roi_sd1), np.max(freqs_per_roi_sd2)))
 
-def header_single(log, section, version, path, iteration, rois, rep, pooled_repeats,
-                number_concentration, size_distribution, bins, column):
-    print('Comparing single section:')
-    print(f'   section: {section}')
-    print(f'   version: {version}')
-    print(f' iteration: {iteration}')
-    print(f'      rois: {rois}')
-    print(f'replicates: {rep}')
-    print(f'      path: {path}')
-    print('------------------------------------')
-    print('| pooled repeats?', pooled_repeats)
-    print('| plot number concentration?', number_concentration)
-    print('| plot size distribution?', size_distribution)
-    print('| number of bins:', bins, 'number of columns:', columns)
-    print('------------------------------------')
-    log.write('Comparing single section:\n')
-    log.write(f'   section: {section}\n')
-    log.write(f'   version: {version}\n')
-    log.write(f' iteration: {iteration}\n')
-    log.write(f'      rois: {rois}\n')
-    log.write(f'replicates: {rep}\n')
-    log.write(f'      path: {path}\n')
-    log.write('------------------------------------\n')
-    log.write(f'| pooled repeats? {pooled_repeats}\n')
-    log.write(f'| plot number concentration? {number_concentration}\n')
-    log.write(f'| plot size distribution? {size_distribution}\n')
-    log.write(f'| number of bins: {bins}, number of columns: {columns}\n')
-    log.write('------------------------------------\n')
+    return [freqs_per_roi1, freqs_per_roi2, freqs_per_roi_means1, freqs_per_roi_sd1, 
+        freqs_per_roi_means2, freqs_per_roi_sd2, binned_freq_per_roi1,binned_freq_per_roi2,
+        binned_freq_per_roi_mean1, binned_freq_per_roi_sd1,
+        binned_freq_per_roi_mean2, binned_freq_per_roi_sd2, max_y]
 
 def header_double(log, section1, version1, path1, iter1, rois1, rep1, 
-                section2, version2, path2, iter2, rois2, rep2, paired_classes, pooled_repeats, 
+                section2, version2, path2, iter2, rois2, rep2, paired_classes, 
                 number_concentration, size_distribution, bins, columns):
     print( 'Comparing->        [1]   |   [2]')
     print(f'   section:      {section1} | {section2}')
@@ -329,7 +382,6 @@ def header_double(log, section1, version1, path1, iter1, rois1, rep1,
     print(f'path [2]: {path2}')
     print('------------------------------------')
     print('| paired classes?', paired_classes)
-    print('| pooled repeats?', pooled_repeats)
     print('| plot number concentration?', number_concentration)
     print('| plot size distribution?', size_distribution)
     print('| number of bins:', bins, 'number of columns:', columns)
@@ -344,65 +396,17 @@ def header_double(log, section1, version1, path1, iter1, rois1, rep1,
     log.write(f'path [2]: {path2}\n')
     log.write('------------------------------------\n')
     log.write(f'| paired classes? {paired_classes}\n')
-    log.write(f'| pooled repeats? {pooled_repeats}\n')
     log.write(f'| plot number concentration? {number_concentration}\n')
     log.write(f'| plot size distribution? {size_distribution}\n')
     log.write(f'| number of bins: {bins}, number of columns: {columns}\n')
     log.write('------------------------------------\n')
 
-
-def compare_single(log, section, version, path, iteration, rois, rep, pooled_repeats,
-                number_concentration, size_distribution, bins, column, across=False):
-    """
-    Compares the ROIs in each class wtih each other.
-    Multiple groups are compared with a single test, if significant differences
-    are found, pair-wise comparisons are performed
-    """
-    header_single(log, section, version, path, iteration, rois, rep, pooled_repeats,
-                number_concentration, size_distribution, bins, column)
-
-    source = f'./resources/analysis/output/stats_{version}_{iteration}_rois_v{rois}.pickle.bz2'
-    print('Loading stats data from', source)
-    with bz2.BZ2File(source, 'rb') as stats_source:
-        s = pickle.load(stats_source)
-        
-    evs_per_replicate_df = s['evs_per_replicate_df']
-    print(evs_per_replicate_df.head())
-
-    #rep = 0
-    d = evs_per_replicate_df.query('replicate==1')['radius_um']
-    print(d[0])
-
-    df = s['data_frame']
-    
-    c = df.query(f"section=='{section}' & replicate==1")['radius_um'].count()
-    print(f'EVs in ROIS in replicate 1: {c}')
-    log.write(f'EVs in ROIS in replicate 1: {c}\n')
-
-    differences_within_classes(log, df, section, rep, pooled_repeats=pooled_repeats)
-    
-    if across:
-        differences_across_classes(log, df, section, rep, pooled_repeats=pooled_repeats)
-
-    # produce plots using the data in stats which comes with the dataframes
-    # number concentration per ROI
-    if number_concentration:
-        plotting.number_concentration_per_roi(s, section, version, iteration, classes2[section], classes2['ordering'])
-
-    if size_distribution:
-        plotting.size_distribution_per_roi_np(s, section, version, iteration,
-            classes2[section], rep, classes2['ordering'], columns=columns)
-
-        from ev_model import plotting_mpl
-        plotting_mpl.size_distribution_per_section(evs_per_replicate_df, section, version, iteration, rep)
-        
-
 def compare_double(log, section1, version1, path1, iter1, rois1, rep1, 
-                section2, version2, path2, iter2, rois2, rep2, paired_classes, pooled_repeats, 
-                number_concentration, size_distribution, bins, columns):
+                section2, version2, path2, iter2, rois2, rep2, 
+                number_concentration, size_distribution, bins, columns, apoptosis, controlled, paired_classes=True):
     
     header_double(log, section1, version1, path1, iter1, rois1, rep1, 
-                section2, version2, path2, iter2, rois2, rep2, paired_classes, pooled_repeats, 
+                section2, version2, path2, iter2, rois2, rep2, paired_classes, 
                 number_concentration, size_distribution, bins, columns)
     stats = []
     data = None
@@ -438,22 +442,71 @@ def compare_double(log, section1, version1, path1, iter1, rois1, rep1,
     print(f'EVs in ROIS in replicate 1 from [2]: {c2}')
     log.write(f'EVs in ROIS in replicate 1 from [1]: {c1}\n')
     log.write(f'EVs in ROIS in replicate 1 from [2]: {c2}\n')
+    if rois1 == '3.0':
+        print('ROIS v3.0')
+        classes = copy.deepcopy(classes2)
+        #bin_edges = [0, 0.100000001, 0.180000001, 0.260000001, 0.340000001, 0.4200001, 0.6]
+        bin_edges = [0, 0.090000001, 0.192000001, 0.2940000001, 0.39600001, 0.4980001, 0.6]
+    else:
+        print('ROIS v4.0')
+        classes = copy.deepcopy(classes3)
+        bin_edges = [0, 0.090000001, 0.192000001, 0.2940000001, 0.39600001, 0.4980001, 0.6]
 
-    differences_two_sections(log, data, [s1, s2], [version1, version2], [rep1, rep2], 
-            paired_classes=paired_classes, pooled_repeats=pooled_repeats)
+    [freqs_per_roi1, freqs_per_roi2, means1, sds1, means2, sds2, 
+    binned_freq_per_roi1, binned_freq_per_roi2,
+    binned_freq_per_roi_mean1, binned_freq_per_roi_sd1,
+    binned_freq_per_roi_mean2, binned_freq_per_roi_sd2, 
+    max_y]= differences_two_sections(log, data, [s1, s2], [version1, version2],
+                                    [rep1, rep2], bin_edges, classes,
+                                     paired_classes=paired_classes)
+    
+    # exporting data in table-like format for 3rd party analysis
+    export_csv([s1,s2], [version1, version2], iter1, rois1, freqs_per_roi1, 
+                freqs_per_roi2, binned_freq_per_roi1, binned_freq_per_roi2, 
+                classes[section1], apoptosis, controlled)
+
+    # one way t-test assumes homoscedasticity, we must check the samples have the same variance
+    #parametric = validate_double_parametric(min_n1, dpr1, min_n2, dpr2, alpha, log)
+    
+    # compare frequencies per ROI
+    p_rois = []
+    for freqs1, freqs2 in zip(freqs_per_roi1, freqs_per_roi2):
+        _, pvalue = sp_stats.f_oneway(freqs1, freqs2)
+        log.write(f'Comparing {freqs1} and {freqs2} p={pvalue:.4f}\n')
+        p_rois.append(pvalue)
+        
+    # compare binned frequencies per ROI
+    p_rois_binned = []
+    for rois1, rois2 in zip(binned_freq_per_roi1, binned_freq_per_roi2):
+        pbins = []
+        for b1, b2 in zip(zip(*rois1), zip(*rois2)):
+            _, pvalue = sp_stats.f_oneway(b1, b2)
+            log.write(f'Comparing {b1} and {b2} p={pvalue:.4f}\n')
+            pbins.append(pvalue)
+        p_rois_binned.append(pbins)
 
     # produce plots using the data in stats which comes with the dataframes
     # number concentration per ROI
     if number_concentration:
-        plotting.number_concentration_per_roi(stats[0], section1, version1, iter1, classes2[section1], classes2['ordering'])
-        plotting.number_concentration_per_roi(stats[1], section2, version2, iter2, classes2[section2], classes2['ordering'])
+        #plotting.number_concentration_per_roi(stats[0], section1, version1, iter1, 
+        #            rois1, classes[section1], classes['ordering'], prois, means1, max_y)
+        #plotting.number_concentration_per_roi(stats[1], section2, version2, iter2, 
+        #            rois2, classes[section2], classes['ordering'], prois, means2, max_y)
+        plotting.freq_bars(means1, sds1, means2, sds2, p_rois, version1, iter1,
+                    classes['ordering'], classes[section1], rois1, 
+                    version2, iter2, rois2)
 
     # size distribution per ROI
     if size_distribution:
-        plotting.size_distribution_per_roi_np(stats[0], section1, version1, iter1,
-            classes2[section1], rep1, classes2['ordering'], bins=bins, columns=columns)
-        plotting.size_distribution_per_roi_np(stats[1], section2, version2, iter2,
-            classes2[section2], rep2, classes2['ordering'], bins=bins, columns=columns)
+        #plotting.size_distribution_per_roi_np(stats[0], section1, version1, iter1,
+        #    classes[section1], rep1, classes['ordering'], bins=bins, columns=columns)
+        #plotting.size_distribution_per_roi_np(stats[1], section2, version2, iter2,
+        #    classes[section2], rep2, classes['ordering'], bins=bins, columns=columns)
+        plotting.size_bars_per_roi(binned_freq_per_roi_mean1, binned_freq_per_roi_sd1,
+                                    binned_freq_per_roi_mean2, binned_freq_per_roi_sd2, 
+                                    p_rois_binned, bin_edges, version1, iter1,
+                                    classes['ordering'], classes[section1], rois1,
+                                    version2, iter2, rois2)
 
 if __name__ == '__main__':
     import argparse
@@ -469,14 +522,17 @@ if __name__ == '__main__':
     s1.add_argument('section', choices=sections, help='The 1st section to analyse.')
     s1.add_argument('version', help="Input data version to read. Forms part of the file name to load: 'stats_SECTION_VERSION_ROIS.pickle.bz2 ")
     s1.add_argument('path', metavar='base_path', help='Directory where the target files are located (1st section to compare)')
-    s1.add_argument('--rois', help='Version of the ROIs used for producing the stats')
+    s1.add_argument('rois', help='Version of the ROIs used for producing the stats')
+    s1.add_argument('apoptosis', help='Apoptosis time used during simulatiion')
     s1.add_argument('--iteration1', nargs='?', type=int, help='Iteration number to read - 1st section. Default 14.4k')
     s1.add_argument('--replicates1', nargs='?', type=int, help='The number of replicates to read - 1st section. Default 3')
-    s1.add_argument('--pooled', action='store_true', help='Enables pooling the data from the repeats')
-    s1.add_argument('--plotNC', action='store_true', help='Enables plotting the number concentration per ROI')
-    s1.add_argument('--plotSD', action='store_true', help='Enables plotting the size distribution per ROI')
+    s1.add_argument('--plotNC', action='store_true', help='Enables plotting the number concentration per section and per ROI')
+    s1.add_argument('--plotSD', action='store_true', help='Enables plotting the size distribution per section and per ROI')
     s1.add_argument('--columns', nargs='?', type=int, help='Specify the number of columns of plots. Default: 3')
-    s1.add_argument('--bins', nargs='?', type=int, help='Specify the number of bins for the histograms. Default: 15')
+    s1.add_argument('--bins', nargs='?', type=int, help='Specify the number of bins used for comparison. Default: 15')
+    s1.add_argument('--minRadius', type=float, default=0.04)
+    s1.add_argument('--maxRadius', type=float, default=0.5)
+    s1.add_argument('--controlled', action='store_true', help='Specifies the distribution of the secretory cells is the same in the repeats')
     
     s2 = parser.add_argument_group('section2', 
         """Settings for a second section to compare.
@@ -485,8 +541,8 @@ if __name__ == '__main__':
         """)
     s2.add_argument('--section2', choices=sections, help='The 2nd section to analyse.')
     s2.add_argument('--version2', help="Input data version to read. Forms part of the file name to load: 'stats_SECTION_VERSION.pickle.bz2 ")
+    s2.add_argument('--path2', help='Directory where the target files are located (2nd section to compare)')
     s2.add_argument('--rois2', help='Version of the ROIs used for producing the stats (2nd section to compare)')
-    s2.add_argument('--path2', help='Directory where the target files are located (2nd section to compare)') 
     s2.add_argument('--iteration2', nargs='?', type=int, help='Iteration number to read - 2nd section. Default 14.4k')
     s2.add_argument('--replicates2', nargs='?', type=int, help='The number of replicates to read - 2nd section. Default 3')
     s2.add_argument('--pairedClasses', action='store_true', help='If present, only ROIs from both sections in matching classes are compared')
@@ -500,28 +556,21 @@ if __name__ == '__main__':
     bins = args.bins if args.bins else 15
     
     tstamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    p = '-pooled' if args.pooled else ''
     s, v = args.section, args.version
 
-    if args.section2 or args.path2:
-        iter2 = args.iteration2 if args.iteration2 else 14400000
-        i2 = f'{iter2/1e6:.1f}'
-        r2 = args.rois2
-        rep2 = args.replicates2 if args.replicates2 else 3
-        if not args.version2:
-            raise RuntimeError('version2 not provided')
-        
-        pc = '-pairedClasses' if args.pairedClasses else '-nonPairedClasses'
-        s2 = args.section2
-        v2 = args.version2
-        target_log = f"./resources/analysis/output/log_analysis_[{v}_{i1}M_{r1}-{v2}_{i2}M_{r2}]{p}{pc}_{tstamp}.txt"
-        with open(target_log, 'w') as log:
-            compare_double(log, args.section, args.version, args.path, iter1, r1, rep1,
-                args.section2, args.version2, args.path2, iter2, r2, rep2, 
-                args.pairedClasses, args.pooled, args.plotNC, args.plotSD, bins, columns)
-    else:
-        target_log = f"./resources/analysis/output/log_analysis_[{v}_{i1}M_{r1}]{p}_{tstamp}.txt"
-        with open(target_log, 'w') as log:
-            compare_single(log, args.section, args.version, args.path, iter1, r1, rep1, 
-                    args.pooled, args.plotNC, args.plotSD, bins, columns)
+    iter2 = args.iteration2 if args.iteration2 else 14400000
+    i2 = f'{iter2/1e6:.1f}'
+    r2 = args.rois2
+    rep2 = args.replicates2 if args.replicates2 else 3
+    if not args.version2:
+        raise RuntimeError('version2 not provided')
+    
+    pc = '-pairedClasses' if args.pairedClasses else '-nonPairedClasses'
+    s2 = args.section2
+    v2 = args.version2
+    target_log = f"./resources/analysis/output/log_analysis_[{v}_{i1}M_{r1}-{v2}_{i2}M_{r2}]{pc}_{tstamp}.txt"
+    with open(target_log, 'w') as log:
+        compare_double(log, args.section, args.version, args.path, iter1, r1, rep1,
+            args.section2, args.version2, args.path2, iter2, r2, rep2, 
+            args.plotNC, args.plotSD, bins, columns, args.apoptosis, 'controlled' if args.controlled else 'std')
     print('Log saved to:', target_log)

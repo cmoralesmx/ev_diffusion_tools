@@ -166,7 +166,7 @@ targets['utj'] = {'buffer':34}
 targets['isthmus'] = {'buffer':32}
 targets['ampulla'] = {'buffer':334}
 
-sections = ['utj', 'isthmus', 'ia-junction', 'ampulla1', 'ampulla2']
+sections = ['isthmus', 'ampulla']
 
 # definitions to use for the analysis
 classes2 = {'ordering':[('narrow_end','#30a2da'), ('wide_end','#fc4f30'), ('narrow_lumen','#e5ae38'),('wide_lumen','green')]}
@@ -174,6 +174,20 @@ classes2['utj'] = {'narrow_end':[1,2,3, 7,8, 13,21], 'wide_end':[4,5,6, 9,14,19]
 classes2['isthmus'] = {'narrow_end':[1,2,3,4,5,6], 'wide_end':[7,8, 9], 'narrow_lumen':[10, 11, 12, 13, 14, 15], 'wide_lumen':[16,17,18,19,20,21]}
 classes2['ia-junction'] = {'narrow_end':[1,2,3,4,5,6,7,8], 'wide_end':[9,10,11,12,13,14,15,16], 'narrow_lumen':[17,18,19,20,21,22,23,24], 'wide_lumen':[25,26,27,28,29,30,31,32]}
 classes2['ampulla'] = {'narrow_end':[1,2,3,4,5,6], 'wide_end':[7,8,9,10, 11, 12], 'narrow_lumen':[13,14,15,16,17,18], 'wide_lumen':[19, 20, 21, 22, 23, 24]}
+
+# deffinitions for v3 of the analysis
+# color palete from https://learnui.design/tools/data-color-picker.html#palette
+classes3 = {'ordering':[('narrow_end','#003f5c'), ('narrow_lumen','#444e86'),('lumen_centre','#955196'), ('near_epithelium','#dd5182'), ('far_epithelium','#ff6e54'), ('wide_end','#ffa600')]}
+classes3['isthmus'] = {'narrow_end':[1,2,4,5,6,7], 'wide_end':[],
+                       'narrow_lumen':[9, 10, 11, 12, 13, 14],
+                       'lumen_centre':[17, 18],
+                       'near_epithelium':[1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14],
+                       'far_epithelium':[3, 8, 15, 16, 19, 20, 21]}
+classes3['ampulla'] = {'narrow_end':[1,2,3,4,5,6], 'wide_end':[7,8,9,10,11,12], 
+                       'narrow_lumen':[13,14,15,16,17,18],
+                       'lumen_centre':[19, 20, 21, 22, 23, 24],
+                       'near_epithelium':[32,33,34,35,36,37,38,39,40,41,42,43],
+                      'far_epithelium':[25,26,27,28,29,30,31]}
 
 # select which verion of the analysis to use
 classes = copy.deepcopy(classes2)
@@ -184,7 +198,7 @@ def pickle_data_to_compressed_file(data, name, version, iteration):
         print(f'data in {name} saved to ./resources/analysis/output/{version}_{name}_{iteration}.pickle.bz2')
 
 def main(section, base_path, iteration, replicates, load_rois, 
-        min_distance, max_distance, version, streaming):
+        min_distance, max_distance, version, streaming, force_overwrite):
     distances_selected = [min_distance, max_distance]
     
     analysis_setup = als.prepare_analysis(section, targets, distances_selected, 
@@ -193,7 +207,8 @@ def main(section, base_path, iteration, replicates, load_rois,
 
     analysis_setup['evs_d'] = als.load_experiment_data(analysis_setup['base_path'], 
                                                         analysis_setup['replicates'], 
-                                    target_iteration=analysis_setup['target_iteration'], streaming=streaming)
+                                    target_iteration=analysis_setup['target_iteration'], 
+                                    streaming=streaming, force_overwrite=force_overwrite)
     base_polygon = als.produce_base_polygons(environment.load_polygons(section))
     analysis_setup['evs_d_useful'] = identify_valid_evs_multiprocess(
                                                 base_polygon,
@@ -260,7 +275,7 @@ if __name__ ==  '__main__':
     parser.add_argument('-i', '--iteration', nargs='?', type=int, help='Iteration number to read. Default 14.4k')
     parser.add_argument('-r', '--replicates', nargs='?', type=int, help='The number of replicates to read')
     parser.add_argument('-p', '--polygons', nargs='?', type=int, help='Polygons to load for the ROIs')
-    #parser.add_argument('-s', action='store_true', help='The agents in the XML are read one by one. Enabling this allows processing XML files with file size larger than the available RAM')
+    parser.add_argument('-f', '--force', action='store_true', help='Force creating the pickle files overwriting existing files')
     args = parser.parse_args()
 
     print('--'*10)
@@ -288,4 +303,4 @@ if __name__ ==  '__main__':
     print('replicates:', r)
     print('   ROIS id:', args.polygons if args.polygons else '---', ', file:', load_rois)
     
-    main(args.section, args.path, i, r, load_rois, min_d, max_d, args.version, streaming=True)
+    main(args.section, args.path, i, r, load_rois, min_d, max_d, args.version, streaming=True, force_overwrite=args.force)
