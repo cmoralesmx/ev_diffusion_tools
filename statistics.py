@@ -409,7 +409,7 @@ def compare_double(log, section1, version1, path1, iter1, rois1, rep1,
                 section2, version2, path2, iter2, rois2, rep2, paired_classes, 
                 number_concentration, size_distribution, bins, columns)
     stats = []
-    data = None
+    data, data_per_replicate = None, None
     source1 = f'./resources/analysis/output/stats_{version1}_{iter1}_rois_v{rois1}.pickle.bz2'
     source2 = f'./resources/analysis/output/stats_{version2}_{iter2}_rois_v{rois2}.pickle.bz2'
     for source in [source1, source2]:
@@ -417,17 +417,22 @@ def compare_double(log, section1, version1, path1, iter1, rois1, rep1,
             s = pickle.load(stats_source)
 
             df = s['data_frame']
+            df_per_replicate = s['evs_per_replicate_df']
             
             if data is None:
                 if section1 == section2:
                     print('adding 1 to the section name')
                     df.index = df.index.set_levels(df.index.levels[0].str.cat(['1']), level=0)
+                    df_per_replicate.index = df_per_replicate.index.set_levels(df_per_replicate.index.levels[0].str.cat(['1']), level=0)
                 data = df
+                data_per_replicate = df_per_replicate
             else:
                 if section1 == section2:
                     print('adding 2 to the section name')
                     df.index = df.index.set_levels(df.index.levels[0].str.cat(['2']), level=0)
+                    df_per_replicate.index = df_per_replicate.index.set_levels(df_per_replicate.index.levels[0].str.cat(['2']), level=0)
                 data = data.append(s['data_frame'])
+                data_per_replicate = data_per_replicate.append(s['evs_per_replicate_df'])
             stats.append(s)
     if section1 == section2:
         s1 = section1 + '1'
@@ -436,6 +441,34 @@ def compare_double(log, section1, version1, path1, iter1, rois1, rep1,
         s1 = section1
         s2 = section2
     
+    # produce mean and sd of exosomes and micro vesicles per replicate
+    exs1, exs2, mvs1, mvs2, t1, t2 = [], [], [], [], [], []
+    print('\n================== Frequency of Exosomes and MVs per repeat ==================')
+    print('   --------------- [1] ----------------   --------------- [2] ----------------')
+    print('  |   Exos    |    MVs    ||    Sum    | |   Exos    |    MVs    ||    Sum    |')
+    print('   ------------------------------------| |------------------------------------|')
+    for r in range(rep1):
+        e1 = data_per_replicate.query(f"section=='{s1}' & replicate=={r} & radius_um < 0.1")['radius_um'].count()
+        m1 = data_per_replicate.query(f"section=='{s1}' & replicate=={r} & radius_um >= 0.1")['radius_um'].count()
+        e2 = data_per_replicate.query(f"section=='{s2}' & replicate=={r} & radius_um < 0.1")['radius_um'].count()
+        m2 = data_per_replicate.query(f"section=='{s2}' & replicate=={r} & radius_um >= 0.1")['radius_um'].count()
+
+        print(f'  | {e1:>6}    | {m1:>6}    || {e1 + m1:>6}    ', end='| |')
+        print(f' {e2:>6}    | {m2:>6}    || {e2 + m2:>6}    |')
+        exs1.append(e1)
+        mvs1.append(m1)
+        t1.append(e1 + m1)
+        exs2.append(e2)
+        mvs2.append(m2)
+        t2.append(e2 + m2)
+    print('---------------------------------------| |------------------------------------|')
+    print(f'μ | {np.array(exs1).mean():>9.2f} | {np.array(mvs1).mean():>9.2f} || {np.array(t1).mean():>9.2f} |', end='')
+    print(f' | {np.array(exs2).mean():>9.2f} | {np.array(mvs2).mean():>9.2f} || {np.array(t2).mean():>9.2f} |')
+    print(f'σ | {np.array(exs1).std():>9.2f} | {np.array(mvs1).std():>9.2f} || {np.array(t1).std():>9.2f} |', end= '')
+    print(f' | {np.array(exs2).std():>9.2f} | {np.array(mvs2).std():>9.2f} || {np.array(t2).std():>9.2f} |')
+    print('---------------------------------------   ------------------------------------')
+
+    print('\n\nFrom ROIS')
     c1 = data.query(f"section=='{s1}' & replicate==1")['radius_um'].count()
     c2 = data.query(f"section=='{s2}' & replicate==1")['radius_um'].count()
     print(f'EVs in ROIS in replicate 1 from [1]: {c1}')
@@ -488,20 +521,12 @@ def compare_double(log, section1, version1, path1, iter1, rois1, rep1,
     # produce plots using the data in stats which comes with the dataframes
     # number concentration per ROI
     if number_concentration:
-        #plotting.number_concentration_per_roi(stats[0], section1, version1, iter1, 
-        #            rois1, classes[section1], classes['ordering'], prois, means1, max_y)
-        #plotting.number_concentration_per_roi(stats[1], section2, version2, iter2, 
-        #            rois2, classes[section2], classes['ordering'], prois, means2, max_y)
         plotting.freq_bars(means1, sds1, means2, sds2, p_rois, version1, iter1,
                     classes['ordering'], classes[section1], rois1, 
                     version2, iter2, rois2)
 
     # size distribution per ROI
     if size_distribution:
-        #plotting.size_distribution_per_roi_np(stats[0], section1, version1, iter1,
-        #    classes[section1], rep1, classes['ordering'], bins=bins, columns=columns)
-        #plotting.size_distribution_per_roi_np(stats[1], section2, version2, iter2,
-        #    classes[section2], rep2, classes['ordering'], bins=bins, columns=columns)
         plotting.size_bars_per_roi(binned_freq_per_roi_mean1, binned_freq_per_roi_sd1,
                                     binned_freq_per_roi_mean2, binned_freq_per_roi_sd2, 
                                     p_rois_binned, bin_edges, version1, iter1,
