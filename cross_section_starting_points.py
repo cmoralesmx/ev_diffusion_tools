@@ -18,7 +18,8 @@ def process_image(img, min_section_vertices=210):
     # draw the identified contours with a distinctive colour
     plt.figure()
     fig, (ax) = plt.subplots(1, 1, sharex='col', figsize=(20, 10))
-    ax.set_title('Identified contours w/more than ' + str(min_section_vertices) + ' edges highlighted in colour')
+    ax.set_title('Identified contours w/more than ' +
+                 str(min_section_vertices) + ' edges highlighted in colour')
     ax.imshow(img, interpolation='nearest', cmap=plt.cm.get_cmap('grey'))
     for n, contour in enumerate(contours):
         if len(contour) > min_section_vertices:
@@ -30,9 +31,11 @@ def process_image(img, min_section_vertices=210):
 
 def special_contours(contours, greater_than_n, external, internal):
     plt.figure()
-    plt.plot(contours[greater_than_n[external]][:, 1], contours[greater_than_n[external]][:, 0])
+    plt.plot(contours[greater_than_n[external]][:, 1],
+             contours[greater_than_n[external]][:, 0])
     for i in internal:
-        plt.plot(contours[greater_than_n[i]][:, 1], contours[greater_than_n[i]][:, 0])
+        plt.plot(contours[greater_than_n[i]][:, 1],
+                 contours[greater_than_n[i]][:, 0])
     plt.axis([0, 2588, 1858, 0])
     plt.savefig('03_special_contours.png')
 
@@ -44,7 +47,8 @@ def find_vertices(contours, greater_than_n, simplify=True, tolerance=0.25):
     :param greater_than_n:
     :param simplify:
     :param tolerance:
-    :return: a list containing a list of vertices for each sub section / region in the cross section
+    :return: a list containing a list of vertices for each sub
+             section/region in the cross section
     """
     vertices = []
 
@@ -52,7 +56,8 @@ def find_vertices(contours, greater_than_n, simplify=True, tolerance=0.25):
     for i in range(len(greater_than_n)):
         if simplify:
             #  ()
-            section_vertices = measure.approximate_polygon(contours[greater_than_n[i]], tolerance)
+            section_vertices = measure.approximate_polygon(
+                contours[greater_than_n[i]], tolerance)
         else:
             section_vertices = contours[greater_than_n[i]]
 
@@ -65,17 +70,25 @@ def identify_source_points(vertices, use_internal_normal=True):
     source_points = []
     # traverse the vertices on the contour
     n = len(vertices)
-    for i in range(n-1):
+    for i in range(n - 1):
         p1 = (vertices[i][0], vertices[i][1])
-        p2 = (vertices[i+1][0], vertices[i+1][1])
+        p2 = (vertices[i + 1][0], vertices[i + 1][1])
 
-        source_points.append({'p': geo.middle_point(p1, p2), 'normal': geo.unit_vector_2p(
-            geo.two_points_normal(p1, p2, use_internal_normal))})
+        source_points.append({
+            'p':
+            geo.middle_point(p1, p2),
+            'normal':
+            geo.unit_vector_2p(
+                geo.two_points_normal(p1, p2, use_internal_normal))
+        })
     return source_points
 
 
-def cells_in_section(section_vertices, cell_width_mean, cell_width_variance=0.0001,
-                     oriented_towards_centre=True, secretory_cell_probability=0.5):
+def cells_in_section(section_vertices,
+                     cell_width_mean,
+                     cell_width_variance=0.0001,
+                     oriented_towards_centre=True,
+                     secretory_cell_probability=0.5):
     """
     Traverse each pair of vertices forming the section.
     Get the section orientation using its normal
@@ -85,13 +98,15 @@ def cells_in_section(section_vertices, cell_width_mean, cell_width_variance=0.00
     :param cell_width_mean: in millimetres
     :param cell_width_variance: in millimetres
     :param oriented_towards_centre:
-    :param secretory_cell_probability: Probability for any cells of being a secretory cell. Usually 0.5
+    :param secretory_cell_probability: Probability for any cells of being a
+                                       secretory cell. Usually 0.5
     :return: list of cells in the current section
     """
     cells = list()
     limit = len(section_vertices)
     for i in range(1, limit):
-        distance_between_vertices = geo.distance(section_vertices[i-1], section_vertices[i])
+        distance_between_vertices = geo.distance(section_vertices[i - 1],
+                                                 section_vertices[i])
         # compute the number of cells to generate
         n_cells = distance_between_vertices / cell_width_mean
     # then check the segment between the last and the first vertices
@@ -99,33 +114,49 @@ def cells_in_section(section_vertices, cell_width_mean, cell_width_variance=0.00
     return cells
 
 
-def generate_cells(vertices, invert_orientation, secretory_cell_probability=0.5, cell_diameter_mm2=0.005):
+def generate_cells(vertices,
+                   invert_orientation,
+                   secretory_cell_probability=0.5,
+                   cell_diameter_mm2=0.005):
     """
     A typical pig oviduct measures 150mm in length with a diameter of 1 mm.
-    Using the formula for the lateral surface area of a cylinder, we get a total area of 706.96 mm^2.
+    Assuming the oviduct is a cylindric shape with smooth surface, we can do a
+    rough estimate of the number of cells that would fit on its surface. Using
+    the formula for the lateral surface area of a cylinder,
     LSA = 2 * pi * r * h
-    (We are not considering the internal folds here)
-    Considering a cell size of 5um^2, there would be a total of 141,372,000 cells.
+    we get a total area of 706.96 mm^2. Considering a cell size of 5um^2, a
+    total of 141,372,000 cells could fit here. Of course, this is a simplified
+    estimation as we are not considering the internal folds here
 
-    :param vertices: list with lists of vertices forming each shape of the cross section. One list per shape.
-    :param invert_orientation: list of section ids which cells must be oriented facing away from the centre of the shape
-    :param secretory_cell_probability: Probability for any cells of being a secretory cell. Usually 0.5
+    :param vertices: list with lists of vertices forming each shape of the
+                     cross-section. One list per shape.
+    :param invert_orientation: list of section ids which cells must be oriented
+                               facing away from the centre of the shape
+    :param secretory_cell_probability: Probability for any cells of being a
+                                       secretory cell. Usually 0.5
     :param cell_diameter_mm2: target cell diameter in millimetres squared
     :return:
     """
-    cell_width = cmath.sqrt(cell_diameter_mm2/cmath.pi) * 2
+    cell_width = cmath.sqrt(cell_diameter_mm2 / cmath.pi) * 2
     coordinates = []
-    # As previously stated, contours 12 & 14 lay within contour 11, their normals must point in the other direction
+    # As previously stated, contours 12 & 14 lay within contour 11, their
+    # normals must point in the other direction
     for i in range(len(vertices)):
         # previously, we were identifying the source points directly
         # now, we need to compute how many
         if i in invert_orientation:
             source_points = identify_source_points(vertices[i], False)
-            cells = cells_in_section(vertices[i], cell_width, oriented_towards_centre=False,
-                                     secretory_cell_probability=secretory_cell_probability)
+            cells = cells_in_section(
+                vertices[i],
+                cell_width,
+                oriented_towards_centre=False,
+                secretory_cell_probability=secretory_cell_probability)
         else:
             source_points = identify_source_points(vertices[i])
-            cells = cells_in_section(vertices[i], cell_width, secretory_cell_probability=secretory_cell_probability)
+            cells = cells_in_section(
+                vertices[i],
+                cell_width,
+                secretory_cell_probability=secretory_cell_probability)
         coordinates.append(source_points)
 
     for i in range(len(coordinates)):
@@ -140,6 +171,7 @@ if __name__ == '__main__':
     special_contours(cs, gtn, 3, internal=must_flip_orientation)
 
     all_vertices = find_vertices(cs, gtn, simplify=True)
-    starting_coordinates = generate_cells(all_vertices, invert_orientation=must_flip_orientation)
+    starting_coordinates = generate_cells(
+        all_vertices, invert_orientation=must_flip_orientation)
 
     # export the coordinates
