@@ -13,12 +13,21 @@ from ev_model import environment
 def compute_areas_and_evs_per_cross_section(section, analysis_setup,
                                             user_rois):
     """
+    Computes the area of the base polygon for the section specifiedi.
+
+    input:
+    section can be one of the strings ['isthmus', 'ampulla', 'utj',
+                                      'ampulla1', 'ampulla2', 'ia-junction']
+    analysis_setup is a dictionary as produced by X?
+    user_rois
 
     output:
-    total area of cross-section in um^2
-    total area of cross-section in mm^2
-    list of areas per ROI
-    list of counts of EVs per ROI
+    [
+    total area of cross-section in um^2,
+    total area of cross-section in mm^2,
+    list of areas per ROI,
+    list of counts of EVs per ROI,
+    ]
     """
     from shapely.geometry import Polygon
 
@@ -62,6 +71,18 @@ def compute_areas_and_evs_per_cross_section(section, analysis_setup,
 
 
 def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
+    """
+    Identifies EVs out of bounds of the polygons representing the environment.
+    These can exist under normal circumstances but during their existance
+    outside the environment they could be considered not valid for some
+    processes i.e.: for collision detection
+    - At initialisation, when new EVs are introduced in the system, they are
+    created outside the polygon and are displaced to the interior mimmicking
+    biological release from the cell
+    This function is called by a multiprocessing process to reduce
+    the time needed to check all the combinations
+    Depends on shapely for the topological functionality
+    """
     from shapely.geometry import Point
     from shapely.prepared import prep
     not_valid = []
@@ -80,16 +101,17 @@ def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
 
 def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
     """
-    Finds what EVs are inside a given ROI in a specific replicate
+    Finds what EVs are inside which ROI per replicate
+    This function is called by a multiprocessing process to reduce
+    the time needed to check all the combinations
+    Depends on shapely for the topological functionality
     """
     from shapely.geometry import Polygon, Point
     from shapely.prepared import prep
 
-    # n_sizes = len(size_ranges)
     pol = Polygon(roi_coords)
     ppol = prep(pol)
     evs_here = []
-    # print(f'rep {rep_id}, roi {roi_id}')
     for ev in evs_in_replicate:
         p = Point(ev['x'], ev['y'])
         if ppol.contains(p):
@@ -98,6 +120,11 @@ def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
 
 
 def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
+    """
+    Identify EVs out of bounds using multiprocessing to reduce the time needed
+    to comple the task.
+    More details are available on `not_valid_ev_locator`
+    """
     n_replicates = len(evs_in_replicates)
     print('Will check', n_replicates, 'replicates. \nProcessing, wait...')
 
@@ -129,6 +156,10 @@ def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
 
 
 def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
+    """
+    Finds the EVs located inside the ROIs using multiprocessing to reduce the
+    time needed to complete the task
+    """
     n_polys = len(polys)
     n_replicates = len(evs_in_replicates)
     evs_in_roi_replicate_objects = [[list() for p in range(n_replicates)]
@@ -166,6 +197,8 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
                 evs_in_roi_replicate_radius_age.append(
                     (res[0], res[1], ev['radius_um'], ev['age']))
         print('COMPLETED')
+    # Produce a list of Replicate - ROI - # of elements
+    # which can be used for an initial assesment of the system or task
     print('Rep ROI Element')
     total_in_rois = 0
     for roi in range(len(evs_in_roi_replicate_objects)):
@@ -180,8 +213,22 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
     ]
 
 
-targets = {}
+def pickle_data_to_compressed_file(data, name, version, iteration):
+    """
+    Saves the data as pickle objects
+    """
+    rao = './resources/analysis/output/'
+    vni = f'{version}_{name}_{iteration}'
+    with bz2.BZ2File(f'{rao}{vni}.pickle.bz2', 'wb') as compressed_output_file:
+        pickle.dump(data, compressed_output_file)
+        print(f'data in {name} saved to {rao}{vni}.pickle.bz2')
 
+
+targets = {}
+# We have defined the maximum distance for each section that will still produce
+# valid polygons when shrinking the original polygon to produce inner regions
+# These inner polygons can be used to identify the EVs located at specific
+# distance from the edges of the oviduct
 targets['infundibulum'] = {'buffer': 77}
 targets['ia-junction'] = {'buffer': 80}
 targets['utj'] = {'buffer': 34}
@@ -190,7 +237,8 @@ targets['ampulla'] = {'buffer': 334}
 
 sections = ['isthmus', 'ampulla']
 
-# definitions to use for the analysis
+# definitions of classes for the Regions of Interest
+# The numbers here correspond to the index of the polygon in a list of polygons
 classes2 = {
     'ordering': [('narrow_end', '#30a2da'), ('wide_end', '#fc4f30'),
                  ('narrow_lumen', '#e5ae38'), ('wide_lumen', 'green')]
@@ -248,16 +296,13 @@ classes3['ampulla'] = {
 classes = copy.deepcopy(classes2)
 
 
-def pickle_data_to_compressed_file(data, name, version, iteration):
-    rao = './resources/analysis/output/'
-    vni = f'{version}_{name}_{iteration}'
-    with bz2.BZ2File(f'{rao}{vni}.pickle.bz2', 'wb') as compressed_output_file:
-        pickle.dump(data, compressed_output_file)
-        print(f'data in {name} saved to {rao}{vni}.pickle.bz2')
-
-
 def main(section, base_path, iteration, replicates, load_rois, min_distance,
          max_distance, version, streaming, force_overwrite):
+    """
+    Reads an XML produced by the FlameGPU-based EV model to identify what
+    EVs are within the regions of interest per replicate. This computation
+    is intensive. For this reason, the counts produced are stored for later use
+    """
     distances_selected = [min_distance, max_distance]
 
     analysis_setup = als.prepare_analysis(section, targets, distances_selected,
@@ -347,6 +392,15 @@ m = Manager()
 q = m.Queue()
 
 if __name__ == '__main__':
+    """
+    Starts the script, processes user input to identify the process to execute
+    Input:
+    path specifies the location in the file system where the script should look for
+         to load the input files
+    section required to identify what section of the oviduct the current execution
+    is dealing with. It will become part of the output files file name
+    version string added to the file name of the output files
+    """
     import argparse
     freeze_support()
 
