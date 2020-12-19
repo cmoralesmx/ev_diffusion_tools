@@ -260,65 +260,6 @@ _targets['ampulla'] = {'buffer': 334}
 
 sections = ['isthmus', 'ampulla']
 
-# definitions of classes for the Regions of Interest
-# The numbers here correspond to the index of the polygon in a list of polygons
-classes2 = {
-    'ordering': [('narrow_end', '#30a2da'), ('wide_end', '#fc4f30'),
-                 ('narrow_lumen', '#e5ae38'), ('wide_lumen', 'green')]
-}
-classes2['utj'] = {
-    'narrow_end': [1, 2, 3, 7, 8, 13, 21],
-    'wide_end': [4, 5, 6, 9, 14, 19],
-    'narrow_lumen': [15, 16, 17, 18],
-    'wide_lumen': [10, 11, 12, 20]
-}
-classes2['isthmus'] = {
-    'narrow_end': [1, 2, 3, 4, 5, 6],
-    'wide_end': [7, 8, 9],
-    'narrow_lumen': [10, 11, 12, 13, 14, 15],
-    'wide_lumen': [16, 17, 18, 19, 20, 21]
-}
-classes2['ia-junction'] = {
-    'narrow_end': [1, 2, 3, 4, 5, 6, 7, 8],
-    'wide_end': [9, 10, 11, 12, 13, 14, 15, 16],
-    'narrow_lumen': [17, 18, 19, 20, 21, 22, 23, 24],
-    'wide_lumen': [25, 26, 27, 28, 29, 30, 31, 32]
-}
-classes2['ampulla'] = {
-    'narrow_end': [1, 2, 3, 4, 5, 6],
-    'wide_end': [7, 8, 9, 10, 11, 12],
-    'narrow_lumen': [13, 14, 15, 16, 17, 18],
-    'wide_lumen': [19, 20, 21, 22, 23, 24]
-}
-
-# deffinitions for v3 of the analysis
-# color palete from https://learnui.design/tools/data-color-picker.html#palette
-classes3 = {
-    'ordering': [('narrow_end', '#003f5c'), ('narrow_lumen', '#444e86'),
-                 ('lumen_centre', '#955196'), ('near_epithelium', '#dd5182'),
-                 ('far_epithelium', '#ff6e54'), ('wide_end', '#ffa600')]
-}
-classes3['isthmus'] = {
-    'narrow_end': [1, 2, 4, 5, 6, 7],
-    'wide_end': [],
-    'narrow_lumen': [9, 10, 11, 12, 13, 14],
-    'lumen_centre': [17, 18],
-    'near_epithelium': [1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14],
-    'far_epithelium': [3, 8, 15, 16, 19, 20, 21]
-}
-classes3['ampulla'] = {
-    'narrow_end': [1, 2, 3, 4, 5, 6],
-    'wide_end': [7, 8, 9, 10, 11, 12],
-    'narrow_lumen': [13, 14, 15, 16, 17, 18],
-    'lumen_centre': [19, 20, 21, 22, 23, 24],
-    'near_epithelium': [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43],
-    'far_epithelium': [25, 26, 27, 28, 29, 30, 31]
-}
-
-# select which verion of the analysis to use
-classes = copy.deepcopy(classes2)
-
-
 def main(section, base_path, iteration, replicates, load_rois, min_distance,
          max_distance, version, streaming, force_overwrite):
     """
