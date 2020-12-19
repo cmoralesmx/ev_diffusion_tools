@@ -13,21 +13,21 @@ from ev_model import environment
 def compute_areas_and_evs_per_cross_section(section, analysis_setup,
                                             user_rois):
     """
-    Computes the area of the base polygon for the section specifiedi.
+    Compute the area of the outer most polygon of the specified section.
 
-    input:
-    section can be one of the strings ['isthmus', 'ampulla', 'utj',
-                                      'ampulla1', 'ampulla2', 'ia-junction']
-    analysis_setup is a dictionary as produced by X?
-    user_rois
+    Args:
+        section: the section to compute the area from, can be one of ['isthmus',
+        'ampulla', 'utj', 'ampulla1', 'ampulla2', 'ia-junction']
+        analysis_setup: a dictionary produced by X?
+        user_rois: the Regions of Interest to intersect and
 
-    output:
-    [
-    total area of cross-section in um^2,
-    total area of cross-section in mm^2,
-    list of areas per ROI,
-    list of counts of EVs per ROI,
-    ]
+    Returns:
+        [
+        the total area of cross-section in um^2,
+        the total area of cross-section in mm^2,
+        a list of areas per ROI,
+        a list of counts of EVs per ROI,
+        ]
     """
     from shapely.geometry import Polygon
 
@@ -72,16 +72,22 @@ def compute_areas_and_evs_per_cross_section(section, analysis_setup,
 
 def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
     """
-    Identifies EVs out of bounds of the polygons representing the environment.
-    These can exist under normal circumstances but during their existance
-    outside the environment they could be considered not valid for some
-    processes i.e.: for collision detection
-    - At initialisation, when new EVs are introduced in the system, they are
-    created outside the polygon and are displaced to the interior mimmicking
-    biological release from the cell
-    This function is called by a multiprocessing process to reduce
-    the time needed to check all the combinations
-    Depends on shapely for the topological functionality
+    Identify EVs out of bounds of the polygons representing the environment.
+
+    Under normal circumstances, when new EVs are introduced in the system, they
+    are created outside the polygon and are displaced to the interior mimmicking
+    the biological release from the cell
+
+    Althought, this is fine for the model, they could be considered not valid
+    for some processes i.e.: for debugging collision detection
+
+    Args:
+        replicate_id: the index of the replicate to check
+        evs_in_replicate: a list of dictionaries, one for each EV in this
+                          replicate
+        poly_coords: A list of coordinates. They must produce a valid Polygon
+    Returns:
+        void, stores the index of the EV OOB in the multiprocessign queue
     """
     from shapely.geometry import Point
     from shapely.prepared import prep
@@ -102,9 +108,14 @@ def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
 def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
     """
     Finds what EVs are inside which ROI per replicate
-    This function is called by a multiprocessing process to reduce
-    the time needed to check all the combinations
-    Depends on shapely for the topological functionality
+
+    Args:
+        rep_id: the index of the replicate to work with
+        roi_id: the index of the Region of Interest to work with
+        evs_in_replicate: a list of dictionaries, one per EV in replicate
+        roi_coords: a list of coordinates for each vertice of a polygon
+    Returns:
+        void, uses the multiprocessign queue to store the values identified
     """
     from shapely.geometry import Polygon, Point
     from shapely.prepared import prep
@@ -121,16 +132,21 @@ def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
 
 def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
     """
-    Identify EVs out of bounds using multiprocessing to reduce the time needed
-    to comple the task.
+    Identify EVs out of bounds. Multiprocessing version
+
     More details are available on `not_valid_ev_locator`
+
+    Args:
+        poly_coords: A list of lists of vertices per polygon
+    Returns:
+        evs_in_replicates: A list of list of indices of the EVs per replicate
     """
     n_replicates = len(evs_in_replicates)
     print('Will check', n_replicates, 'replicates. \nProcessing, wait...')
 
     processes = []
+    # iterate the list of replicates, each is handled by 1 processor
     for rep_id in range(n_replicates):
-        # iterate the list of replicates, each is handled by 1 processor
         p = Process(target=not_valid_ev_locator,
                     args=(rep_id, evs_in_replicates[rep_id], poly_coords))
         processes.append(p)
@@ -157,8 +173,16 @@ def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
 
 def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
     """
-    Finds the EVs located inside the ROIs using multiprocessing to reduce the
-    time needed to complete the task
+    Find the EVs located inside the ROIs. Multiprocessing version
+
+    Args:
+        polys: a list of shapely polygons
+        evs_in_replicates: a list of lists of dictionaries, one per EV
+    Returns:
+       evs_in_roi_replicate_objects: a list of lists of EVs per ROI per Replicate
+       evs_in_roi_replicate_counts: a list of the total EVs per ROI per Replicate
+       evs_in_roi_replicate_radius_age: a list of tuples (ROI id, replicate id,
+                                        EV radius, age)
     """
     n_polys = len(polys)
     n_replicates = len(evs_in_replicates)
@@ -169,7 +193,6 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
     print(evs_in_roi_replicate_counts.shape)
     evs_in_roi_replicate_radius_age = list()
 
-    # n_loops = n_polys//n_processors + n_polys % n_processors
     print('Will check', n_polys, 'rois in', n_replicates,
           'replicates. \nProcessing, wait...')
     for rep_id in range(n_replicates):
@@ -187,6 +210,7 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
             p.join()
 
         for p in processes:
+            # res [0:ROI id, 1:Replicate id]
             res = q.get()
 
             for ev in res[2]:
@@ -197,7 +221,7 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
                 evs_in_roi_replicate_radius_age.append(
                     (res[0], res[1], ev['radius_um'], ev['age']))
         print('COMPLETED')
-    # Produce a list of Replicate - ROI - # of elements
+    # Display a list of Replicate - ROI - # of elements
     # which can be used for an initial assesment of the system or task
     print('Rep ROI Element')
     total_in_rois = 0
@@ -214,9 +238,8 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
 
 
 def pickle_data_to_compressed_file(data, name, version, iteration):
-    """
-    Saves the data as pickle objects
-    """
+    """Saves the data as pickle objects"""
+
     rao = './resources/analysis/output/'
     vni = f'{version}_{name}_{iteration}'
     with bz2.BZ2File(f'{rao}{vni}.pickle.bz2', 'wb') as compressed_output_file:
@@ -225,7 +248,7 @@ def pickle_data_to_compressed_file(data, name, version, iteration):
 
 
 targets = {}
-# We have defined the maximum distance for each section that will still produce
+# We define the maximum distance for each section that will still produce
 # valid polygons when shrinking the original polygon to produce inner regions
 # These inner polygons can be used to identify the EVs located at specific
 # distance from the edges of the oviduct
@@ -299,9 +322,20 @@ classes = copy.deepcopy(classes2)
 def main(section, base_path, iteration, replicates, load_rois, min_distance,
          max_distance, version, streaming, force_overwrite):
     """
-    Reads an XML produced by the FlameGPU-based EV model to identify what
-    EVs are within the regions of interest per replicate. This computation
-    is intensive. For this reason, the counts produced are stored for later use
+    Identify what EVs are within the regions of interest (ROI) per replicate.
+    This computation is intensive. The counts produced are stored for later use
+
+    Args:
+        section: the name of the oviduct section to work with
+        base_path: a file path to take as the working directory for this script
+        iteration: the iteration number to work with
+        replicates: the number of replicates to work with
+        load_rois: the file containing the polygons to load
+        min_distance: ??
+        max_distance: ??
+        version: string to identify what version of the experiment to work with
+        streaming: ??
+        force_overwrite: Flag to enable rewriting the output files if they exist
     """
     distances_selected = [min_distance, max_distance]
 
@@ -393,13 +427,19 @@ q = m.Queue()
 
 if __name__ == '__main__':
     """
-    Starts the script, processes user input to identify the process to execute
-    Input:
-    path specifies the location in the file system where the script should look for
-         to load the input files
-    section required to identify what section of the oviduct the current execution
-    is dealing with. It will become part of the output files file name
-    version string added to the file name of the output files
+    Process XML files produced by the FlameGPU-based EV model to find the agents
+    located inside the regions of interest
+
+    Args:
+        path: string, the location in the file system where to look for the input files
+        section: string to identify section of the oviduct to work with
+        version: string to identify the version of the experiment to work with
+        iteration: the iteration number to work with
+        replicates: the number of replicates to work with
+        polygons: the polygons to load
+        force: force writing the output if the files exist
+    Returns:
+        void: the output is written to screen and files are saved to drive
     """
     import argparse
     freeze_support()
