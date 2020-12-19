@@ -102,7 +102,7 @@ def not_valid_ev_locator(replicate_id, evs_in_replicate, poly_coords):
                 not_valid.append(i)
         else:
             not_valid.append(i)
-    q.put((replicate_id, not_valid))
+    _q.put((replicate_id, not_valid))
 
 
 def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
@@ -127,7 +127,7 @@ def ev_in_roi_locator(rep_id, roi_id, evs_in_replicate, roi_coords):
         p = Point(ev['x'], ev['y'])
         if ppol.contains(p):
             evs_here.append(ev)
-    q.put((roi_id, rep_id, evs_here))
+    _q.put((roi_id, rep_id, evs_here))
 
 
 def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
@@ -157,7 +157,7 @@ def identify_valid_evs_multiprocess(poly_coords, evs_in_replicates):
     total_i = 0
     total_non_valid = 0
     for p in processes:
-        res = q.get()
+        res = _q.get()
         total_non_valid += len(res[1])
         nrep = len(evs_in_replicates[res[0]])
         print(f'EV in replicate: {nrep}, non-valid: {len(res[1])} '
@@ -211,7 +211,7 @@ def identify_evs_per_roi_multiprocess(polys, evs_in_replicates):
 
         for p in processes:
             # res [0:ROI id, 1:Replicate id]
-            res = q.get()
+            res = _q.get()
 
             for ev in res[2]:
                 evs_in_roi_replicate_objects[res[0]][res[1]].append(ev)
@@ -247,16 +247,16 @@ def pickle_data_to_compressed_file(data, name, version, iteration):
         print(f'data in {name} saved to {rao}{vni}.pickle.bz2')
 
 
-targets = {}
+_targets = {}
 # We define the maximum distance for each section that will still produce
 # valid polygons when shrinking the original polygon to produce inner regions
 # These inner polygons can be used to identify the EVs located at specific
 # distance from the edges of the oviduct
-targets['infundibulum'] = {'buffer': 77}
-targets['ia-junction'] = {'buffer': 80}
-targets['utj'] = {'buffer': 34}
-targets['isthmus'] = {'buffer': 32}
-targets['ampulla'] = {'buffer': 334}
+_targets['infundibulum'] = {'buffer': 77}
+_targets['ia-junction'] = {'buffer': 80}
+_targets['utj'] = {'buffer': 34}
+_targets['isthmus'] = {'buffer': 32}
+_targets['ampulla'] = {'buffer': 334}
 
 sections = ['isthmus', 'ampulla']
 
@@ -339,7 +339,7 @@ def main(section, base_path, iteration, replicates, load_rois, min_distance,
     """
     distances_selected = [min_distance, max_distance]
 
-    analysis_setup = als.prepare_analysis(section, targets, distances_selected,
+    analysis_setup = als.prepare_analysis(section, _targets, distances_selected,
                                           base_path, replicates, iteration)
     [_, user_rois,
      analysis_setup['prep_polys']] = als.load_rois_from_file(load_rois)
@@ -422,8 +422,8 @@ def main(section, base_path, iteration, replicates, load_rois, min_distance,
         print('stats saved to ', sf)
 
 
-m = Manager()
-q = m.Queue()
+_m = Manager()
+_q = _m.Queue()
 
 if __name__ == '__main__':
     """
@@ -431,7 +431,7 @@ if __name__ == '__main__':
     located inside the regions of interest
 
     Args:
-        path: string, the location in the file system where to look for the input files
+        path: string location in the file system where to look for the input files
         section: string to identify section of the oviduct to work with
         version: string to identify the version of the experiment to work with
         iteration: the iteration number to work with
