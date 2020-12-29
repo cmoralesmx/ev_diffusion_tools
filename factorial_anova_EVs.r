@@ -2,11 +2,12 @@
 # simulation model product of my PhD. Several experiments were completed, all
 # are related so they all are analysed here
 
-#install.packages("AICcmodavg")
+# Please install the following packages before executing this script
+# This can be done as follows: install.packages("AICcmodavg", dependencies=TRUE)
 library(AICcmodavg)
 library(tidyverse)
-library(ggpubr)
 library(rstatix)
+library(ggpubr)
 
 # The data is loaded from CSV, these are the classes to use for each column
 cClasses <- c(
