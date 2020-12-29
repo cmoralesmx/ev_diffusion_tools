@@ -37,14 +37,14 @@ bp <- "~/data/ev_iter/analysis/CSVs/"
 csv1 <- paste0(bp, "1_freqs_size_all_v36_er3_both_a4-8_4-10h_rois_v3.0b.csv")
 
 # Evidence of how the following files were produced is available in
-# ~/data/ev_iter/ev_repeats.txt, the comment per line shows the line number
-csv2 <- paste0(bp, "2_freqs_all_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv")  # ln 290
-csv3 <- paste0(bp, "3_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v3.0.csv") # ln 234
-csv4 <- paste0(bp, "4_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v4.0.csv") # ln 277
+# ~/data/ev_iter/ev_repeats.txt, the line number of their origin is shown next
+csv2 <- paste0(bp, "2_freqs_all_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv")     # ln 290
+csv3 <- paste0(bp, "3_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v3.0.csv")          # ln 234
+csv4 <- paste0(bp, "4_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v4.0.csv")          # ln 277
 csv5 <- paste0(bp, "5_freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v3.0.csv") # ln 248
 csv6 <- paste0(bp, "6_freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv") # ln 290
-csv7 <- paste0(bp, "7_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v3.0.csv") # ln 242
-csv8 <- paste0(bp, "8_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v4.0.csv") # ln 285
+csv7 <- paste0(bp, "7_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v3.0.csv")   # ln 242
+csv8 <- paste0(bp, "8_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v4.0.csv")   # ln 285
 
 csv1.df <- read.csv(csv1, colClasses = cClasses)
 csv2.df <- read.csv(csv2, colClasses = cClasses)
@@ -72,8 +72,8 @@ f12 <- freq ~ section * stage * roi_type * differentiation * type
 f13 <- freq ~ section * stage + roi_type * differentiation * apoptosis * type
 f14 <- freq ~ section + stage + roi_type + time + apoptosis + differentiation + type
 f15 <- freq ~ section * stage * roi_type * time * apoptosis * type + differentiation
-# csv4
-f16 <- freq ~ section * stage * roi_type * time * apoptosis *  type
+# csv4, f16 causes problems due to a factor with only one level (2+ required)
+# f16 <- freq ~ section * stage * roi_type * time * apoptosis *  type
 # csv5
 f17 <- freq ~ stage * roi_type * time * type
 f18 <- freq ~ stage * roi_type * time
@@ -148,11 +148,8 @@ csv4.m2 <- lm(f2, data = csv4.df)
 csv4.m3 <- lm(f3, data = csv4.df)
 csv4.m4 <- lm(f4, data = csv4.df)
 csv4.m5 <- lm(f5, data = csv4.df)
-#csv4.m6 <- lm(f16, data = csv4.df)
-csv4.models <- list(csv4.m1, csv4.m2, csv4.m3, csv4.m4, csv4.m5) #, csv4.m6)
-csv4.models.names <- c("csv4.m1", "csv4.m2", "csv4.m3", "csv4.m4", "csv4.m5"
-#                       "csv4.m6")
-                       )
+csv4.models <- list(csv4.m1, csv4.m2, csv4.m3, csv4.m4, csv4.m5)
+csv4.models.names <- c("csv4.m1", "csv4.m2", "csv4.m3", "csv4.m4", "csv4.m5")
 aictab(cand.set = csv4.models, modnames = csv4.models.names)
 
 # models for csv5.df
