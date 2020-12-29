@@ -31,20 +31,20 @@ cClasses <- c(
 # 4-10h, simulated time in hours, 4-10h contains data at 4,8,10h
 # ROIs version, version of the Regions of interest used (v3.0, v4.0)
 
-# This csv1 is located in ~/data/ev_iter/analysis/ and was produced by
-# concatenating the content of the files in
+bp <- "~/data/ev_iter/analysis/CSVs/"
+# The csv1 was produced by concatenating the content of the files in
 # ~/data/ev_iter/analysis/freq_size_all_both_a4-8_4-10h_rois_v3
-csv1 <- "freqs_size_all_v36_er3_both_a4-8_4-10h_rois_v3.0b.csv"
+csv1 <- paste0(bp, "1_freqs_size_all_v36_er3_both_a4-8_4-10h_rois_v3.0b.csv")
 
 # Evidence of how the following files were produced is available in
 # ~/data/ev_iter/ev_repeats.txt, the comment per line shows the line number
-csv2 <- "freqs_all_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv"  # ln 290
-csv3 <- "freqs_all_size_v36_er3_cd_a4_4-8h_rois_v3.0.csv" # ln 234
-csv4 <- "freqs_all_size_v36_er3_cd_a4_4-8h_rois_v4.0.csv" # ln 277
-csv5 <- "freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v3.0.csv" # ln 248
-csv6 <- "freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv" # ln 290
-csv7 <- "freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v3.0.csv" # ln 242
-csv8 <- "freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v4.0.csv" # ln 285
+csv2 <- paste0(bp, "2_freqs_all_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv")  # ln 290
+csv3 <- paste0(bp, "3_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v3.0.csv") # ln 234
+csv4 <- paste0(bp, "4_freqs_all_size_v36_er3_cd_a4_4-8h_rois_v4.0.csv") # ln 277
+csv5 <- paste0(bp, "5_freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v3.0.csv") # ln 248
+csv6 <- paste0(bp, "6_freqs_ampulla_size_v36_er3_both_a4-8_4-10h_rois_v4.0.csv") # ln 290
+csv7 <- paste0(bp, "7_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v3.0.csv") # ln 242
+csv8 <- paste0(bp, "8_freqs_ampulla_size_v36_er3_cd_a4-8_4-10h_rois_v4.0.csv") # ln 285
 
 csv1.df <- read.csv(csv1, colClasses = cClasses)
 csv2.df <- read.csv(csv2, colClasses = cClasses)
