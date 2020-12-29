@@ -148,10 +148,11 @@ csv4.m2 <- lm(f2, data = csv4.df)
 csv4.m3 <- lm(f3, data = csv4.df)
 csv4.m4 <- lm(f4, data = csv4.df)
 csv4.m5 <- lm(f5, data = csv4.df)
-csv4.m6 <- lm(f16, data = csv4.df)
-csv4.models <- list(csv4.m1, csv4.m2, csv4.m3, csv4.m4, csv4.m5, csv4.m6)
-csv4.models.names <- c("csv4.m1", "csv4.m2", "csv4.m3", "csv4.m4", "csv4.m5",
-                       "csv4.m6")
+#csv4.m6 <- lm(f16, data = csv4.df)
+csv4.models <- list(csv4.m1, csv4.m2, csv4.m3, csv4.m4, csv4.m5) #, csv4.m6)
+csv4.models.names <- c("csv4.m1", "csv4.m2", "csv4.m3", "csv4.m4", "csv4.m5"
+#                       "csv4.m6")
+                       )
 aictab(cand.set = csv4.models, modnames = csv4.models.names)
 
 # models for csv5.df
@@ -162,7 +163,7 @@ csv5.m4 <- lm(f20, data = csv5.df)
 
 csv5.models <- list(csv5.m1, csv5.m2, csv5.m3, csv5.m4)
 csv5.models.names <- c("csv5.m1", "csv5.m2", "csv5.m3", "csv5.m4")
-aictab(cand.set = csv.models, modnames = csv5.models.names)
+aictab(cand.set = csv5.models, modnames = csv5.models.names)
 
 # models for csv6.df
 csv6.m1 <- lm(f17, data = csv6.df)
