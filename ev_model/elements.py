@@ -25,7 +25,7 @@ class Cell(evmetry.Segment):
         self._id = _id
         self.radius = diameter / 2.
         self.diameter = diameter
-        self.name = None 
+        self.name = None
 
     @property
     def coordinates(self):
@@ -52,11 +52,11 @@ class Cell(evmetry.Segment):
         <unit_normal_x>{:f}</unit_normal_x>
         <unit_normal_y>{:f}</unit_normal_y>
         <normal_length>{:f}</normal_length>
-    </xagent>""".format(self.name, self._id, self.p1[0], self.p1[1], 
+    </xagent>""".format(self.name, self._id, self.p1[0], self.p1[1],
         self.p2[0], self.p2[1], self.mp[0], self.mp[1],
-        self.direction[0], self.direction[1], self.direction_unit[0], 
-        self.direction_unit[1], self.direction_length, self.normal[0], 
-        self.normal[1], self.unit_normal[0], self.unit_normal[1], 
+        self.direction[0], self.direction[1], self.direction_unit[0],
+        self.direction_unit[1], self.direction_length, self.normal[0],
+        self.normal[1], self.unit_normal[0], self.unit_normal[1],
         self.normal_length)
 
 class ExtendedCell():
@@ -84,7 +84,7 @@ class ExtendedCell():
         self.unit_normal = np.array([float(cell['unit_normal_x']),
             float(cell['unit_normal_y'])])
         for tag, value in cell.items():
-            if tag not in ['id', 'x', 'y', 'p1_x', 'p1_y', 'p2_x', 'p2_y', 
+            if tag not in ['id', 'x', 'y', 'p1_x', 'p1_y', 'p2_x', 'p2_y',
                     'unit_normal_y', 'unit_normal_y']:
                 setattr(self, tag, value)
 
@@ -98,7 +98,7 @@ class ExtendedCell():
         self.p4[distance] = p4
         self.outer[distance] = np.vstack([p3, p4])
         # works for CW defined shapes, not CCW
-        A, B, C, D = self.p1, self.p2, p3, p4 
+        A, B, C, D = self.p1, self.p2, p3, p4
         AB = B - A
         AB[1] *= -1
         AD = D - A
@@ -127,10 +127,10 @@ class ExtendedCell():
         D3 = self.yx_plus_xy(self.BC[distance], point) + self.C3[distance]
         D4 = self.yx_plus_xy(self.CD[distance], point) + self.C4[distance]
         return 0 >= D1 and 0 >= D4 and 0 <= D2 and 0 >= D3
-    
+
     def __str__(self):
         return f'Extended cell {self._id} at ({self.x:.2f} {self.y:.2f})'
-    
+
     def __repr__(self):
         return f'Extended cell {self._id} at ({self.x:.2f} {self.y:.2f})'
 
@@ -171,7 +171,7 @@ class SecretoryCell(Cell):
         self.source_points_locations = []
         self.time_to_next_secretion_attempt = 0
         self.last_source_point_secreting = -1
-    
+
     @property
     def source_points(self):
         return np.array(self.source_points_locations)
@@ -197,7 +197,7 @@ class EV:
         from the density (p) and volume (v), as follows:  p = m/v -> m = p * v
         To do so, we take the (estimated) mass_of_a_single_100um_EV_in_g as 5.47990700763866E-17
         The volume of a sphere is a function of its diameter v = 4/3 pi * r
-        
+
         Some values pre-computed for efficiency:
         # the constant part of the sphere volume formula: (4/3)*Pi = 4.1887902047863905
         # the volume_100_nm_ev = 523598.7755982988 nm^3
@@ -211,12 +211,12 @@ class EV:
         pi_times_4div3 = 4.1887902047863905
         # mass_per_volume_unit = 1.0465851455395313e-22
         mass_p_vol_u_x_4div3_pi = 4.38392560611093E-22
-        
+
         # compute the sphere's volume
         self.volume = pi_times_4div3 * self.radius_nm**3
         # compute
         return mass_p_vol_u_x_4div3_pi * self.radius_nm**3
-    
+
     def __init__(self, **kwargs):
         self._id = kwargs.get('_id', 0)
         self.x_1 = kwargs.get('x_1', 0)  # holds the previous position for this EV
@@ -231,16 +231,10 @@ class EV:
         self.y = kwargs.get('y', 0)
         self.base_direction_x = 0
         self.base_direction_y = 0
-        
         self.colour = '()'
-        
-        # self.radius_nm = random.randrange(40, 160, 10)
-        # self.radius_um = kwargs.get('radius_nm', self.radius_nm) / 1000
-        # self.radius_m = self.radius_um / 1e+6
         self.radius_um = kwargs.get('radius_um', random.randrange(40, 160, 10) / 1000)
         self.radius_nm = self.radius_um * 1000
         self.radius_m = self.radius_um / 1e+6
-        
         self.mass_g = self.mass_from_radius()
         self.mass_kg = self.mass_g * 1000
         self.mass_ag = self.mass_g / 1e-18
@@ -259,22 +253,22 @@ class EV:
         # and works as the expected displacement of this particle
         self.velocity_ums = math.sqrt(2 * dof * self.diffusion_rate_um * dt)
         self.velocity_ms = math.sqrt(2 * dof * self.diffusion_rate_m * dt)
-    
+
     @property
     def location(self):
         return np.array([self.x, self.y])
-    
+
     def get_xml_description(self, degrees_of_freedom, time_in_initial_state):
         return """
     <xagent>
         <name>EV</name>
         <id>{:d}</id>
-        <x>{:f}</x>
-        <y>{:f}</y>
-        <x_1>{:f}</x_1>
-        <y_1>{:f}</y_1>
-        <vx>{:.10f}</vx>
-        <vy>{:.10f}</vy>
+        <x>{}</x>
+        <y>{}</y>
+        <x_1>{}</x_1>
+        <y_1>{}</y_1>
+        <vx>{}</vx>
+        <vy>{}</vy>
         <bm_vx>0</bm_vx>
         <bm_vy>0</bm_vy>
         <mass_ag>{:f}f</mass_ag>
@@ -289,10 +283,25 @@ class EV:
         <closest_ciliary_cell_id>-1</closest_ciliary_cell_id>
         <closest_ciliary_cell_distance>100</closest_ciliary_cell_distance>
         <time_in_initial_state>{:f}</time_in_initial_state>
-    </xagent>""".format(self._id, self.x, self.y, self.x_1, self.y_1, self.vx,
-        self.vy, self.mass_ag, self.radius_um, self.diffusion_rate_um, 
+    </xagent>""".format(self._id,
+        f'{self.x:f}' if self.x else '--',
+        f'{self.y:f}' if self.y else '--',
+        f'{self.x_1:f}' if self.x_1 else '--',
+        f'{self.y_1:f}' if self.y_1 else '--',
+        f'{self.vx:.10f}' if self.vx else '--',
+        f'{self.vy:.10f}' if self.vy else '--',
+        self.mass_ag, self.radius_um, self.diffusion_rate_um,
         self.diffusion_rate_um * 2 * degrees_of_freedom,
-        self.velocity_ums, self.time_in_initial_state)
+        self.velocity_ums, time_in_initial_state)
+
+    def print_resume(self, cf=lambda val: f"{val:>9.4f}" if val else '  --.----'):
+        print("""       x:{} y:{}
+     v x:{} y:{}
+    bm x:{} y:{}
+   t-1 x:{} y:{}""".format(
+        cf(self.x), cf(self.y), cf(self.vx), cf(self.vy),
+        cf(self.bm_vx), cf(self.bm_vy), cf(self.x_1),  cf(self.y_1)))
+        print('radius_um',self.radius_um)
 
 class GridStorage():
     '''
@@ -306,7 +315,13 @@ class GridStorage():
         args_list = [minx, maxx, miny, maxy]
         args_none = args_list.count(None)
         self.fixed_size = False
-        self.data = {}
+        # index tracks what cell is holding each element in data. We assume all the
+        # elements have a unique ID, no clashing should occur.
+        # key: element_id
+        # value: {'cell_id':0, 'element':object} 
+        self.index = {}
+        # data is the actual cell-based storage
+        self.grid = {}
         self.total_elements = 0
         if 0 < args_none < 4:
             raise ValueError('All range parameters must have values')
@@ -341,48 +356,77 @@ class GridStorage():
         """
         cell_index = self.what_cell(x, y)
         return self.nearest_cells_for_cell_index(cell_index)
-    
+
     def nearest_cells_for_cell_index(self, cell_index):
-        min_x = cell_index[0] - 1
-        min_y = cell_index[1] - 1
+        min_x = int(cell_index[0] - 1)
+        min_y = int(cell_index[1] - 1)
         return cell_index, [c for c in [(x,y)
                 for x in range(min_x, min_x + 3)
-                for y in range(min_y, min_y + 3)] if c in self.data]
-        
+                for y in range(min_y, min_y + 3)] if c in self.grid]
 
     def __getitem__(self, cell_idx):
-        # returns a dictionary holding the content of the cell 
-        if cell_idx in self.data:
-            return self.data[cell_idx]
+        """
+        Returns a dictionary holding the content of a whole cell from the grid.
+        Bear in mind the cell stores only a list of element_id. The actual elements
+        are stored in the index.
+        """
+        if cell_idx in self.grid:
+            return self.grid[cell_idx]
         else:
             return None
-    
+
     def store(self, element):
-        # cell level index
-        cell_idx = (int(element.x), int(element.y))
-        # grid level index
+        """
+        At the time of insertion, we identify the target cell for storing the element_id based
+        on the coordinates ot the element being inserted.
+        We also keep an index of the elements stored per cell on the grid. This is useful
+        for fetching the elements directly instead of doing a lookup in the grid.
+        """
+        # cell level index, (x,y)
+        cell_idx = (int(element.mp[0]), int(element.mp[1]))
+        # grid level index, (x//grid_size, y//grid_size)
         target_cell = self.what_cell(cell_idx[0], cell_idx[1])
-        
-        if target_cell in self.data:
-            if cell_idx in self.data[target_cell]:
-                self.data[target_cell][cell_idx].append(element)
+
+        # record what cell would be storing this element
+        self.index[element._id] = {'cell_id': target_cell, 'element': element}
+
+        if target_cell in self.grid:
+            if cell_idx in self.grid[target_cell]:
+                self.grid[target_cell][cell_idx].append(element._id)
             else:
-                self.data[target_cell][cell_idx] = [element]
+                self.grid[target_cell][cell_idx] = [element._id]
         else:
-            self.data[target_cell] = {cell_idx: [element]}
+            self.grid[target_cell] = {cell_idx: [element._id]}
         self.total_elements += 1
-    
-    def remove(self, element):
+
+    def fetch_element_by_id(self, element_id):
+        """
+        get the element matching the given ID if such element exists in data
+        """
+        if element_id in self.index:
+            return self.index[element_id]['element']
+        else:
+            print(f"The provided element_id: {element_id} does not exist in the data set.")
+            return None
+
+    def remove_element(self, element):
+        """
+        Checks if the element exists in the index and fetch the cell_id. Then, use the cell_id
+        to find and remove the entry for this element in the grid. Finally, remove the entry
+        from the same index.
+        No further checking is needed.
+        """
         # cell level index
         cell_idx = (int(element.x), int(element.y))
         # grid level index
         target_cell = self.what_cell(cell_idx[0], cell_idx[1])
 
-        if target_cell in self.data:
-            if cell_idx in self.data[target_cell]:
-                for e in range(len(self.data[target_cell][cell_idx])):
-                    if self.data[target_cell][cell_idx][e] == element:
-                        del(self.data[target_cell][cell_idx][e])
+        if target_cell in self.grid:
+            if cell_idx in self.grid[target_cell]:
+                for e in range(len(self.grid[target_cell][cell_idx])):
+                    if self.grid[target_cell][cell_idx][e] == element:
+                        del(self.grid[target_cell][cell_idx][e])
                 self.total_elements -= 1
                 return True
         return False
+
